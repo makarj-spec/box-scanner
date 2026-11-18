@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканер коробок (Покращений)</title>
+    <!-- Tailwind CSS для стилізації -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Бібліотека для сканування штрихкодів -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Шапка -->
+    <header class="bg-indigo-600 text-white shadow-md p-4 text-center">
+        <h1 class="text-2xl font-bold">📦 Сканер коробок</h1>
+        <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний номер</p>
+    </header>
+
+    <main class="flex-grow container mx-auto p-4 max-w-xl space-y-6">
+
+        <!-- Крок сканування / Введення -->
+        <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <span id="step-indicator" class="font-semibold text-indigo-600 text-lg">Крок 1 з 2: Сканування Назви / Моделі</span>
+                <span id="badge-shk1" class="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full font-medium">Очікування ШК1</span>
+            </div>
+
+            <!-- Вікно камери -->
+            <div id="reader-container" class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center">
+                <div id="reader" class="w-full h-full"></div>
+                <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center bg-slate-900">
+                    <svg class="w-12 h-12 mb-2 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    <span>Натисніть «Увімкнути камеру» нижче</span>
+                </div>
+            </div>
+
+            <!-- Керування камерою -->
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-start-camera" onclick="startScanner()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                    📷 Увімкнути камеру
+                </button>
+                <button id="btn-stop-camera" onclick="stopScanner()" class="bg-rose-500 hover:bg-rose-600 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm hidden">
+                    ⏹ Вимкнути камеру
+                </button>
+                <button onclick="document.getElementById('file-input').click()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                    🖼 Обрати з галереї
+                </button>
+                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="scanFromFile(event)">
+            </div>
+
+            <!-- Ручне введення -->
+            <div class="pt-2 border-t space-y-2">
+                <label class="block text-xs font-semibold text-slate-500 uppercase">Або ввести текст вручну:</label>
+                <div class="flex gap-2">
+                    <input type="text" id="manual-input" placeholder="Введіть значення..." class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button onclick="handleManualSubmit()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">ОК</button>
+                </div>
+            </div>
+
+            <!-- Поточні буферні значення -->
+            <div id="current-buffer" class="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1 text-slate-600">
+                <div><b>ШК1 (Модель):</b> <span id="val-shk1" class="text-indigo-600 font-semibold">не зчитано</span></div>
+                <div><b>ШК2 (Серійний №):</b> <span id="val-shk2" class="text-indigo-600 font-semibold">очікується...</span></div>
+            </div>
+        </div>
+
+        <!-- Список відсканованих коробок -->
+        <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="font-bold text-lg text-slate-700">Відскановані коробки (<span id="box-count">0</span>)</h2>
+                <div class="space-x-2">
+                    <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md font-medium transition">Експорт CSV</button>
+                    <button onclick="clearHistory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 px-3 py-1.5 rounded-md font-medium transition">Очистити</button>
+                </div>
+            </div>
+
+            <div id="boxes-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                <div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Логіка застосунку -->
+    <script>
+        let html5QrCode = null;
+        let currentStep = 1; // 1 - скануємо ШК1 (модель), 2 - скануємо ШК2 (серійний)
+        let tempShk1 = '';
+        let boxes = [];
+
+        // Завантаження збережених даних при старті
+        window.onload = function() {
+            const saved = localStorage.getItem('scanned_boxes');
+            if (saved) {
+                boxes = JSON.parse(saved);
+                renderBoxes();
+            }
+        };
+
+        function startScanner() {
+            const placeholder = document.getElementById('camera-placeholder');
+            placeholder.style.display = 'none';
+
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
+            const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config, 
+                onScanSuccess,
+                onScanFailure
+            ).catch(err => {
+                console.error("Помилка запуску камери:", err);
+                alert("Не вдалося запустити камеру. Перевірте дозволи браузера або скористайтеся завантаженням фото з галереї.");
+                placeholder.style.display = 'flex';
+            });
+
+            document.getElementById('btn-start-camera').classList.add('hidden');
+            document.getElementById('btn-stop-camera').classList.remove('hidden');
+        }
+
+        function stopScanner() {
+            if (html5QrCode && html5QrCode.isScanning) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('camera-placeholder').style.display = 'flex';
+                    document.getElementById('btn-start-camera').classList.remove('hidden');
+                    document.getElementById('btn-stop-camera').classList.add('hidden');
+                }).catch(err => console.error("Помилка зупинки:", err));
+            } else {
+                document.getElementById('camera-placeholder').style.display = 'flex';
+                document.getElementById('btn-start-camera').classList.remove('hidden');
+                document.getElementById('btn-stop-camera').classList.add('hidden');
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Вібрація при успішному зчитуванні (якщо підтримується телефоном)
+            if (navigator.vibrate) navigator.vibrate(100);
+            processScannedValue(decodedText.trim());
+        }
+
+        function onScanFailure(error) {
+            // Помилки сканування кадру можна ігнорувати, оскільки вони виникають постійно під час пошуку штрихкоду
+        }
+
+        function scanFromFile(e) {
+            if (e.target.files.length == 0) return;
+            const imageFile = e.target.files[0];
+            
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
+            html5QrCode.scanFile(imageFile, true)
+                .then(decodedText => {
+                    processScannedValue(decodedText.trim());
+                })
+                .catch(err => {
+                    alert("Не вдалося знайти штрихкод на фото. Спробуйте інше фото або введіть дані вручну.");
+                    console.error(err);
+                });
+        }
+
+        function handleManualSubmit() {
+            const input = document.getElementById('manual-input');
+            const val = input.value.trim();
+            if (!val) return;
+            processScannedValue(val);
+            input.value = '';
+        }
+
+        function processScannedValue(value) {
+            if (currentStep === 1) {
+                tempShk1 = value;
+                document.getElementById('val-shk1').innerText = tempShk1;
+                currentStep = 2;
+                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Сканування Серійного номера";
+                document.getElementById('badge-shk1').innerText = "Очікування ШК2";
+                document.getElementById('badge-shk1').className = "text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-medium";
+            } else {
+                let tempShk2 = value;
+                document.getElementById('val-shk2').innerText = tempShk2;
+
+                // Додаємо пару до загального списку
+                boxes.unshift({
+                    shk1: tempShk1,
+                    shk2: tempShk2,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                });
+
+                saveAndReset();
+            }
+        }
+
+        function saveAndReset() {
+            localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
+            renderBoxes();
+
+            // Скидаємо на крок 1
+            currentStep = 1;
+            tempShk1 = '';
+            document.getElementById('val-shk1').innerText = 'не зчитано';
+            document.getElementById('val-shk2').innerText = 'очікується...';
+            document.getElementById('step-indicator').innerText = "Крок 1 з 2: Сканування Назви / Моделі";
+            document.getElementById('badge-shk1').innerText = "Очікування ШК1";
+            document.getElementById('badge-shk1').className = "text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full font-medium";
+        }
+
+        function renderBoxes() {
+            const container = document.getElementById('boxes-list');
+            document.getElementById('box-count').innerText = boxes.length;
+
+            if (boxes.length === 0) {
+                container.innerHTML = `<div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>`;
+                return;
+            }
+
+            container.innerHTML = boxes.map((box, index) => `
+                <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <div>
+                        <div class="text-xs text-slate-400 mb-0.5">${box.time}</div>
+                        <div><b>Модель (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>
+                        <div><b>Серійний (ШК2):</b> <span class="text-emerald-600">${box.shk2}</span></div>
+                    </div>
+                    <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
+                        ✕
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function deleteBox(index) {
+            boxes.splice(index, 1);
+            localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
+            renderBoxes();
+        }
+
+        function clearHistory() {
+            if (confirm("Видалити всі збережені коробки?")) {
+                boxes = [];
+                localStorage.removeItem('scanned_boxes');
+                renderBoxes();
+            }
+        }
+
+        function exportToCSV() {
+            if (boxes.length === 0) {
+                alert("Список порожній!");
+                return;
+            }
+
+            let csvContent = "\uFEFFШК1 (Модель),ШК2 (Серійний номер),Час\n" + 
+                boxes.map(b => `"${b.shk1}","${b.shk2}","${b.time}"`).join("\n");
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `boxes_scan_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
