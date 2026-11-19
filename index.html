@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-19 18:36)</title>
+    <title>Сканер коробок (v2026-11-19 19:07)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-19 18:36
+                Версія: 2026-11-19 19:07
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -49,6 +49,22 @@
                     </button>
                     <button onclick="cancelDuplicateSave()" class="bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 font-semibold py-2 px-3 rounded-lg transition text-xs">
                         Скасувати ШК2
+                    </button>
+                </div>
+            </div>
+
+            <!-- Перемикач профілю ОС: Android / iOS -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-500 uppercase">
+                    <span>📱 Профіль сканування (ОС):</span>
+                    <span id="os-engine-hint" class="text-emerald-700 normal-case font-medium">Апаратний рушій (плавне відео)</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                    <button id="os-btn-android" onclick="setOsProfile('android')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm">
+                        🤖 Android (Плавний)
+                    </button>
+                    <button id="os-btn-ios" onclick="setOsProfile('ios')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
+                        🍎 iOS (Сумісний)
                     </button>
                 </div>
             </div>
@@ -284,20 +300,23 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-19 18:36";
+        const APP_VERSION = "2026-11-19 19:07";
 
         let codeReader = null;
+        let nativeDetector = null;
         let ocrWorker = null;
         let ocrWorkerLang = '';
         let isOcrBusy = false;
+        let isDecodeBusy = false;
         let lastOcrTime = 0;
         let scanLoopId = null;
         let isScanning = false;
         let currentStream = null;
+        let osProfile = 'android'; // 'android' (апаратний BarcodeDetector + нижче навантаження) або 'ios' (ZXing JS)
         let scanMode = 'manual'; // 'manual' або 'auto'
         let inputType = 'both'; // 'both' (код або текст) або 'ocr' (лише текст)
         let ocrLang = 'ukr+eng'; // 'eng', 'ukr', 'ukr+eng'
-        let pinShk1 = false; // закріпити ШК1 для партії коробок
+        let pinShk1 = false;
         let isEditingHighlight = false;
         let currentStep = 1;
         let tempShk1 = '';
@@ -308,7 +327,6 @@
         let boxes = [];
         let torchOn = false;
 
-        // Стан рамки вибору області на фото та повороту зображення
         let cropState = { leftPct: 15, topPct: 32.5, widthPct: 70, heightPct: 35 };
         let photoRotationDeg = 0;
         let dragState = null;
@@ -330,6 +348,25 @@
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
             hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
             return new ZXing.MultiFormatReader(hints);
+        }
+
+        function initNativeDetector() {
+            if ('BarcodeDetector' in window) {
+                try {
+                    nativeDetector = new window.BarcodeDetector({
+                        formats: [
+                            'code_128', 'ean_13', 'ean_8', 'code_39',
+                            'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code', 'data_matrix'
+                        ]
+                    });
+                } catch (e) {
+                    try {
+                        nativeDetector = new window.BarcodeDetector();
+                    } catch (e2) {
+                        nativeDetector = null;
+                    }
+                }
+            }
         }
 
         async function getOcrWorker() {
@@ -359,6 +396,16 @@
         window.onload = function() {
             document.getElementById('app-version').innerText = `Версія: ${APP_VERSION}`;
             codeReader = createReader();
+            initNativeDetector();
+
+            // Автовизначення профілю ОС або відновлення збереженого вибору
+            const savedOs = localStorage.getItem('scan_os_profile');
+            if (savedOs === 'android' || savedOs === 'ios') {
+                setOsProfile(savedOs);
+            } else {
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                setOsProfile(isIOS ? 'ios' : 'android');
+            }
 
             const savedMode = localStorage.getItem('scan_mode');
             setScanMode(savedMode === 'auto' ? 'auto' : 'manual');
@@ -394,6 +441,29 @@
             window.addEventListener('pointercancel', onCropDragEnd);
         };
 
+        function setOsProfile(profile) {
+            osProfile = profile;
+            localStorage.setItem('scan_os_profile', profile);
+
+            const androidBtn = document.getElementById('os-btn-android');
+            const iosBtn = document.getElementById('os-btn-ios');
+            const hint = document.getElementById('os-engine-hint');
+
+            if (profile === 'android') {
+                androidBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm";
+                iosBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+                hint.innerText = nativeDetector
+                    ? "Апаратний BarcodeDetector (60 FPS без лагів)"
+                    : "Оптимізований цикл (знижене навантаження CPU)";
+                hint.className = "text-emerald-700 normal-case font-medium";
+            } else {
+                iosBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
+                androidBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+                hint.innerText = "ZXing JS рушій (для iPhone / Safari)";
+                hint.className = "text-indigo-700 normal-case font-medium";
+            }
+        }
+
         function applyPhotoRotation() {
             const rotator = document.getElementById('photo-rotator');
             const img = document.getElementById('photo-preview-img');
@@ -407,7 +477,6 @@
             const stageH = stage.clientHeight || 320;
 
             if (isSideways) {
-                // При повороті на 90°/270° обмежуємо висоту/ширину так, щоб зображення не вилазило за межі сцени
                 img.style.maxWidth = `${stageH * 0.92}px`;
                 img.style.maxHeight = `${stageW * 0.92}px`;
             } else {
@@ -509,7 +578,6 @@
             document.getElementById('photo-rotator').style.transform = 'rotate(0deg)';
         }
 
-        // Формує полотно з урахуванням повороту фото на 0/90/180/270 градусів
         function buildRotatedPhotoCanvas(img) {
             const natW = img.naturalWidth;
             const natH = img.naturalHeight;
@@ -538,7 +606,6 @@
             const rotW = rotCanvas.width;
             const rotH = rotCanvas.height;
 
-            // Отримуємо реальну візуальну область повернутого зображення всередині #photo-rotator
             const rotator = document.getElementById('photo-rotator');
             const rotatorRect = rotator.getBoundingClientRect();
             const boxRect = cropBox.getBoundingClientRect();
@@ -584,7 +651,7 @@
 
             try {
                 if (inputType === 'both') {
-                    const decoded = decodeBarcodeFromCanvas(canvas);
+                    const decoded = await decodeBarcodeSmart(canvas);
                     if (decoded && decoded.trim()) {
                         closePhotoCropModal();
                         handleDetectedCode(decoded, 'Штрихкод з області фото');
@@ -859,16 +926,18 @@
             const sw = Math.max(1, Math.floor(relWidth * vw));
             const sh = Math.max(1, Math.floor(relHeight * vh));
 
-            const scale = Math.min(1, 960 / Math.max(sw, sh));
+            // На Android при апаратному декодері вистачає 720px без важкого перемасштабування
+            const maxDim = osProfile === 'android' ? 720 : 960;
+            const scale = Math.min(1, maxDim / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
             canvas.height = Math.max(1, Math.floor(sh * scale));
 
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('2d', { willReadFrequently: osProfile === 'ios' });
             ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
             return true;
         }
 
-        function decodeBarcodeFromCanvas(canvas) {
+        function decodeBarcodeWithZXing(canvas) {
             try {
                 const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
                 const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
@@ -877,6 +946,22 @@
             } catch (e) {
                 return null;
             }
+        }
+
+        // У профілі Android спершу використовується апаратний BarcodeDetector (не гальмує UI)
+        async function decodeBarcodeSmart(canvas) {
+            if (osProfile === 'android' && nativeDetector) {
+                try {
+                    const barcodes = await nativeDetector.detect(canvas);
+                    if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                        return barcodes[0].rawValue;
+                    }
+                    return null;
+                } catch (e) {
+                    return decodeBarcodeWithZXing(canvas);
+                }
+            }
+            return decodeBarcodeWithZXing(canvas);
         }
 
         function cleanOcrText(raw) {
@@ -930,41 +1015,48 @@
             }
         }
 
-        function scanLoop() {
+        async function scanLoop() {
             if (!isScanning) return;
 
             const video = document.getElementById('video');
             const aimBox = document.getElementById('aim-box');
-            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                const canvas = document.getElementById('scan-canvas');
-                const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
-                if (captured) {
-                    let decodedBarcode = null;
-                    if (inputType === 'both') {
-                        decodedBarcode = decodeBarcodeFromCanvas(canvas);
-                    }
+            if (!isDecodeBusy && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                isDecodeBusy = true;
+                try {
+                    const canvas = document.getElementById('scan-canvas');
+                    const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
-                    if (decodedBarcode && decodedBarcode.trim()) {
-                        handleDetectedCode(decodedBarcode, 'Штрихкод у рамці');
-                    } else if (currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
-                        isOcrBusy = true;
-                        lastOcrTime = Date.now();
-                        recognizeTextFromCanvas(canvas)
-                            .then(text => {
-                                if (text && isScanning && currentStep === 1) {
-                                    handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
-                                }
-                            })
-                            .catch(() => {})
-                            .finally(() => {
-                                isOcrBusy = false;
-                            });
+                    if (captured) {
+                        let decodedBarcode = null;
+                        if (inputType === 'both') {
+                            decodedBarcode = await decodeBarcodeSmart(canvas);
+                        }
+
+                        if (decodedBarcode && decodedBarcode.trim()) {
+                            handleDetectedCode(decodedBarcode, 'Штрихкод у рамці');
+                        } else if (currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                            isOcrBusy = true;
+                            lastOcrTime = Date.now();
+                            recognizeTextFromCanvas(canvas)
+                                .then(text => {
+                                    if (text && isScanning && currentStep === 1) {
+                                        handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                                    }
+                                })
+                                .catch(() => {})
+                                .finally(() => {
+                                    isOcrBusy = false;
+                                });
+                        }
                     }
+                } finally {
+                    isDecodeBusy = false;
                 }
             }
 
-            scanLoopId = setTimeout(scanLoop, 160);
+            const intervalMs = osProfile === 'android' ? 220 : 160;
+            scanLoopId = setTimeout(scanLoop, intervalMs);
         }
 
         function handleHighlightEdit(val) {
@@ -1040,6 +1132,7 @@
 
         function stopStreamOnly() {
             isScanning = false;
+            isDecodeBusy = false;
             if (scanLoopId) {
                 clearTimeout(scanLoopId);
                 scanLoopId = null;
