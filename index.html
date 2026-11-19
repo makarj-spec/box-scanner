@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-19 17:29)</title>
+    <title>Сканер коробок (v2026-11-19 18:18)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-19 17:29
+                Версія: 2026-11-19 18:18
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -73,6 +73,22 @@
                 </button>
             </div>
 
+            <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                <div class="text-[11px] font-semibold text-slate-500 uppercase">Мова розпізнавання тексту (OCR):</div>
+                <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                    <button id="ocr-lang-eng" onclick="setOcrLang('eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                        🔤 Латиниця (EN)
+                    </button>
+                    <button id="ocr-lang-ukr" onclick="setOcrLang('ukr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                        🇺🇦 Кирилиця (UK)
+                    </button>
+                    <button id="ocr-lang-both" onclick="setOcrLang('ukr+eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                        🌐 Обидві (UK+EN)
+                    </button>
+                </div>
+            </div>
+
             <!-- Перемикач фіксації ШК1 для партії однакових коробок -->
             <label class="flex items-center justify-between bg-indigo-50/70 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
                 <div class="pr-2">
@@ -99,21 +115,50 @@
                     </svg>
                     <span class="text-sm">Натисніть «Увімкнути камеру»</span>
                 </div>
-                <div id="aim-box" class="hidden pointer-events-none absolute inset-x-6 inset-y-12 border-2 border-amber-300/80 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.35)] transition-colors duration-150"></div>
+                <!-- Область сканування: розмір керується повзунками -->
+                <div id="aim-box" style="width: 84%; height: 48%;" class="hidden pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-colors duration-150">
+                    <span class="absolute -top-5 left-1 bg-black/75 text-amber-200 text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
+                        ЗОНА СКАНУВАННЯ
+                    </span>
+                </div>
                 <div id="detected-pill" class="hidden pointer-events-none absolute bottom-2.5 inset-x-2.5 bg-emerald-600/95 text-white text-center py-1.5 px-3 rounded-lg text-xs font-mono font-bold shadow">
                     Виділено: <span id="detected-pill-text"></span>
                 </div>
             </div>
 
-            <!-- Блок ручного підтвердження виділеного значення -->
+            <!-- Регулювання розміру рамки -->
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600 uppercase">
+                    <span>📐 Розмір зони сканування</span>
+                    <button onclick="resetAimBoxSize()" class="text-indigo-600 hover:underline normal-case font-medium">Скинути</button>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-xs text-slate-600">
+                    <label class="space-y-1">
+                        <div class="flex justify-between"><span>Ширина:</span> <span id="aim-w-val" class="font-mono font-semibold">84%</span></div>
+                        <input type="range" id="aim-w-slider" min="35" max="96" value="84" oninput="updateAimBoxSize()" class="w-full accent-indigo-600">
+                    </label>
+                    <label class="space-y-1">
+                        <div class="flex justify-between"><span>Висота:</span> <span id="aim-h-val" class="font-mono font-semibold">48%</span></div>
+                        <input type="range" id="aim-h-slider" min="16" max="88" value="48" oninput="updateAimBoxSize()" class="w-full accent-indigo-600">
+                    </label>
+                </div>
+            </div>
+
+            <!-- Блок ручного підтвердження та редагування виділеного значення -->
             <div id="manual-confirm-box" class="bg-amber-50 border border-amber-300 rounded-xl p-3.5 space-y-2.5">
                 <div class="flex items-center justify-between text-xs gap-2">
-                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код / текст</span>
-                    <span id="confirm-status" class="text-amber-700 text-right">Наведіть камеру на код або назву</span>
+                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код / текст (можна редагувати)</span>
+                    <span id="confirm-status" class="text-amber-700 text-right">Помістіть код або назву в рамку</span>
                 </div>
-                <div class="font-mono text-base font-bold text-slate-900 bg-white border border-amber-200 rounded-lg px-3 py-2 break-all min-h-[2.5rem] flex items-center" id="highlighted-code">
-                    —
-                </div>
+                <input
+                    type="text"
+                    id="highlighted-code"
+                    placeholder="Очікування розпізнавання..."
+                    oninput="handleHighlightEdit(this.value)"
+                    onfocus="isEditingHighlight = true"
+                    onblur="isEditingHighlight = false"
+                    class="w-full font-mono text-base font-bold text-slate-900 bg-white border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
                 <div class="grid grid-cols-2 gap-2">
                     <button id="btn-confirm-code" onclick="confirmHighlightedCode()" disabled class="bg-emerald-600 disabled:bg-slate-300 disabled:text-slate-500 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg transition text-sm">
                         ✅ Зафіксувати
@@ -188,10 +233,11 @@
     <canvas id="scan-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-19 17:29";
+        const APP_VERSION = "2026-11-19 18:18";
 
         let codeReader = null;
         let ocrWorker = null;
+        let ocrWorkerLang = '';
         let isOcrBusy = false;
         let lastOcrTime = 0;
         let scanLoopId = null;
@@ -199,7 +245,9 @@
         let currentStream = null;
         let scanMode = 'manual'; // 'manual' або 'auto'
         let inputType = 'both'; // 'both' (код або текст) або 'ocr' (лише текст)
+        let ocrLang = 'ukr+eng'; // 'eng', 'ukr', 'ukr+eng'
         let pinShk1 = false; // закріпити ШК1 для партії коробок
+        let isEditingHighlight = false; // блокує автооновлення поля під час ручного редагування
         let currentStep = 1;
         let tempShk1 = '';
         let pendingDuplicateShk2 = '';
@@ -229,15 +277,25 @@
         }
 
         async function getOcrWorker() {
-            if (ocrWorker) return ocrWorker;
             if (!window.Tesseract) return null;
-            document.getElementById('confirm-status').innerText = 'Завантаження розпізнавання тексту (OCR)...';
-            ocrWorker = await Tesseract.createWorker('ukr+eng');
+            if (ocrWorker && ocrWorkerLang === ocrLang) return ocrWorker;
+
+            if (ocrWorker) {
+                try { await ocrWorker.terminate(); } catch (e) {}
+                ocrWorker = null;
+            }
+
+            const prevStatus = document.getElementById('confirm-status').innerText;
+            document.getElementById('confirm-status').innerText = `Завантаження OCR (${ocrLang.toUpperCase()})...`;
+            ocrWorker = await Tesseract.createWorker(ocrLang);
             await ocrWorker.setParameters({
                 tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
             });
+            ocrWorkerLang = ocrLang;
             if (!highlightedCode) {
-                document.getElementById('confirm-status').innerText = 'Наведіть камеру на код або назву';
+                document.getElementById('confirm-status').innerText = prevStatus.startsWith('Завантаження')
+                    ? 'Помістіть код або назву в рамку'
+                    : prevStatus;
             }
             return ocrWorker;
         }
@@ -252,6 +310,19 @@
             const savedInputType = localStorage.getItem('scan_input_type');
             setInputType(savedInputType === 'ocr' ? 'ocr' : 'both');
 
+            const savedLang = localStorage.getItem('scan_ocr_lang');
+            if (savedLang === 'eng' || savedLang === 'ukr' || savedLang === 'ukr+eng') {
+                setOcrLang(savedLang);
+            } else {
+                setOcrLang('ukr+eng');
+            }
+
+            const savedW = localStorage.getItem('aim_box_w');
+            const savedH = localStorage.getItem('aim_box_h');
+            if (savedW) document.getElementById('aim-w-slider').value = savedW;
+            if (savedH) document.getElementById('aim-h-slider').value = savedH;
+            updateAimBoxSize();
+
             const savedPin = localStorage.getItem('pin_shk1') === 'true';
             pinShk1 = savedPin;
             document.getElementById('pin-shk1-toggle').checked = savedPin;
@@ -262,6 +333,46 @@
                 renderBoxes();
             }
         };
+
+        function updateAimBoxSize() {
+            const w = document.getElementById('aim-w-slider').value;
+            const h = document.getElementById('aim-h-slider').value;
+            document.getElementById('aim-w-val').innerText = `${w}%`;
+            document.getElementById('aim-h-val').innerText = `${h}%`;
+
+            const aimBox = document.getElementById('aim-box');
+            aimBox.style.width = `${w}%`;
+            aimBox.style.height = `${h}%`;
+
+            localStorage.setItem('aim_box_w', w);
+            localStorage.setItem('aim_box_h', h);
+        }
+
+        function resetAimBoxSize() {
+            document.getElementById('aim-w-slider').value = 84;
+            document.getElementById('aim-h-slider').value = 48;
+            updateAimBoxSize();
+        }
+
+        function setOcrLang(lang) {
+            ocrLang = lang;
+            localStorage.setItem('scan_ocr_lang', lang);
+
+            const engBtn = document.getElementById('ocr-lang-eng');
+            const ukrBtn = document.getElementById('ocr-lang-ukr');
+            const bothBtn = document.getElementById('ocr-lang-both');
+
+            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+            const activeClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
+
+            engBtn.className = lang === 'eng' ? activeClass : inactiveClass;
+            ukrBtn.className = lang === 'ukr' ? activeClass : inactiveClass;
+            bothBtn.className = lang === 'ukr+eng' ? activeClass : inactiveClass;
+
+            if (ocrWorker && ocrWorkerLang !== lang) {
+                getOcrWorker().catch(() => {});
+            }
+        }
 
         function togglePinShk1(checked) {
             pinShk1 = !!checked;
@@ -438,6 +549,51 @@
             }
         }
 
+        function captureAimBoxToCanvas(video, aimBoxEl, canvas) {
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            const rect = video.getBoundingClientRect();
+            const boxRect = aimBoxEl.getBoundingClientRect();
+
+            if (!vw || !vh || !rect.width || !rect.height || !boxRect.width || !boxRect.height) {
+                return false;
+            }
+
+            const videoAspect = vw / vh;
+            const elemAspect = rect.width / rect.height;
+
+            let renderW, renderH, offsetX, offsetY;
+            if (videoAspect > elemAspect) {
+                renderH = rect.height;
+                renderW = renderH * videoAspect;
+                offsetX = (rect.width - renderW) / 2;
+                offsetY = 0;
+            } else {
+                renderW = rect.width;
+                renderH = renderW / videoAspect;
+                offsetX = 0;
+                offsetY = (rect.height - renderH) / 2;
+            }
+
+            const relLeft = Math.max(0, (boxRect.left - rect.left - offsetX) / renderW);
+            const relTop = Math.max(0, (boxRect.top - rect.top - offsetY) / renderH);
+            const relWidth = Math.min(1 - relLeft, boxRect.width / renderW);
+            const relHeight = Math.min(1 - relTop, boxRect.height / renderH);
+
+            const sx = Math.floor(relLeft * vw);
+            const sy = Math.floor(relTop * vh);
+            const sw = Math.max(1, Math.floor(relWidth * vw));
+            const sh = Math.max(1, Math.floor(relHeight * vh));
+
+            const scale = Math.min(1, 960 / Math.max(sw, sh));
+            canvas.width = Math.max(1, Math.floor(sw * scale));
+            canvas.height = Math.max(1, Math.floor(sh * scale));
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+            return true;
+        }
+
         function decodeBarcodeFromCanvas(canvas) {
             try {
                 const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
@@ -451,9 +607,15 @@
 
         function cleanOcrText(raw) {
             if (!raw) return '';
+            const allowedPattern = ocrLang === 'eng'
+                ? /[^A-Za-z0-9\s\-_./]/g
+                : ocrLang === 'ukr'
+                    ? /[^А-Яа-яІіЇїЄєҐґ0-9\s\-_./]/g
+                    : /[^\p{L}\p{N}\s\-_./]/gu;
+
             const lines = raw
                 .split(/\r?\n/)
-                .map(line => line.replace(/[^\p{L}\p{N}\s\-_./]/gu, ' ').replace(/\s+/g, ' ').trim())
+                .map(line => line.replace(allowedPattern, ' ').replace(/\s+/g, ' ').trim())
                 .filter(line => line.length >= 2);
             if (lines.length === 0) return '';
             lines.sort((a, b) => b.length - a.length);
@@ -473,6 +635,8 @@
             if (!code) return;
 
             if (scanMode === 'manual') {
+                // Не перезаписуємо поле, поки користувач редагує його вручну
+                if (isEditingHighlight) return;
                 setHighlightedCode(code, sourceLabel);
             } else {
                 const now = Date.now();
@@ -497,50 +661,63 @@
             if (!isScanning) return;
 
             const video = document.getElementById('video');
+            const aimBox = document.getElementById('aim-box');
             if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
                 const canvas = document.getElementById('scan-canvas');
-                const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
-                canvas.width = Math.floor(video.videoWidth * scale);
-                canvas.height = Math.floor(video.videoHeight * scale);
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
-                let decodedBarcode = null;
-                if (inputType === 'both') {
-                    decodedBarcode = decodeBarcodeFromCanvas(canvas);
-                }
+                if (captured) {
+                    let decodedBarcode = null;
+                    if (inputType === 'both') {
+                        decodedBarcode = decodeBarcodeFromCanvas(canvas);
+                    }
 
-                if (decodedBarcode && decodedBarcode.trim()) {
-                    handleDetectedCode(decodedBarcode, 'Штрихкод');
-                } else if (currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
-                    isOcrBusy = true;
-                    lastOcrTime = Date.now();
-                    recognizeTextFromCanvas(canvas)
-                        .then(text => {
-                            if (text && isScanning && currentStep === 1) {
-                                handleDetectedCode(text, 'Текст (OCR)');
-                            }
-                        })
-                        .catch(() => {})
-                        .finally(() => {
-                            isOcrBusy = false;
-                        });
+                    if (decodedBarcode && decodedBarcode.trim()) {
+                        handleDetectedCode(decodedBarcode, 'Штрихкод у рамці');
+                    } else if (currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                        isOcrBusy = true;
+                        lastOcrTime = Date.now();
+                        recognizeTextFromCanvas(canvas)
+                            .then(text => {
+                                if (text && isScanning && currentStep === 1) {
+                                    handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                                }
+                            })
+                            .catch(() => {})
+                            .finally(() => {
+                                isOcrBusy = false;
+                            });
+                    }
                 }
             }
 
             scanLoopId = setTimeout(scanLoop, 160);
         }
 
+        function handleHighlightEdit(val) {
+            highlightedCode = val.trim();
+            const hasValue = highlightedCode.length > 0;
+            document.getElementById('btn-confirm-code').disabled = !hasValue;
+            document.getElementById('btn-clear-highlight').disabled = !hasValue;
+            if (hasValue) {
+                document.getElementById('confirm-status').innerText = 'Відредаговано — натисніть «Зафіксувати»';
+                document.getElementById('confirm-status').className = 'text-indigo-700 font-semibold';
+            } else {
+                document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку';
+                document.getElementById('confirm-status').className = 'text-amber-700';
+            }
+        }
+
         function setHighlightedCode(code, sourceLabel = 'Виділено') {
             highlightedCode = code;
-            document.getElementById('highlighted-code').innerText = code;
+            document.getElementById('highlighted-code').value = code;
             document.getElementById('confirm-status').innerText = `${sourceLabel} — натисніть «Зафіксувати»`;
             document.getElementById('confirm-status').className = 'text-emerald-700 font-semibold';
             document.getElementById('btn-confirm-code').disabled = false;
             document.getElementById('btn-clear-highlight').disabled = false;
 
             const aimBox = document.getElementById('aim-box');
-            aimBox.classList.remove('border-amber-300/80');
+            aimBox.classList.remove('border-amber-300/90');
             aimBox.classList.add('border-emerald-400');
 
             const pill = document.getElementById('detected-pill');
@@ -550,26 +727,27 @@
 
         function clearHighlightedCode() {
             highlightedCode = '';
-            document.getElementById('highlighted-code').innerText = '—';
-            document.getElementById('confirm-status').innerText = 'Наведіть камеру на код або назву';
+            isEditingHighlight = false;
+            document.getElementById('highlighted-code').value = '';
+            document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку';
             document.getElementById('confirm-status').className = 'text-amber-700';
             document.getElementById('btn-confirm-code').disabled = true;
             document.getElementById('btn-clear-highlight').disabled = true;
 
             const aimBox = document.getElementById('aim-box');
             aimBox.classList.remove('border-emerald-400');
-            aimBox.classList.add('border-amber-300/80');
+            aimBox.classList.add('border-amber-300/90');
 
             document.getElementById('detected-pill').classList.add('hidden');
         }
 
         function confirmHighlightedCode() {
-            if (!highlightedCode) return;
-            const codeToSave = highlightedCode;
+            const currentVal = document.getElementById('highlighted-code').value.trim();
+            if (!currentVal) return;
             playBeep();
             if (navigator.vibrate) navigator.vibrate(100);
             clearHighlightedCode();
-            processScannedValue(codeToSave);
+            processScannedValue(currentVal);
         }
 
         async function toggleTorch() {
@@ -635,7 +813,7 @@
                     if (currentStep === 1) {
                         const text = await recognizeTextFromCanvas(canvas);
                         if (text && text.trim()) {
-                            handleDetectedCode(text, 'Текст з фото (OCR)');
+                            handleDetectedCode(text, `Текст з фото (${ocrLang.toUpperCase()})`);
                             return;
                         }
                     }
