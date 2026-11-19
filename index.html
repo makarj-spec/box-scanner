@@ -6,9 +6,9 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (Diag v2026-11-19 17:05)</title>
+    <title>Сканер коробок (ZXing Direct v2026-11-19 17:15)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
 
@@ -17,7 +17,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-19 17:05
+                Версія: 2026-11-19 17:15
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -42,7 +42,7 @@
 
             <!-- Вікно камери -->
             <div id="reader-container" class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center">
-                <div id="reader" class="w-full h-full"></div>
+                <video id="video" playsinline muted autoplay class="w-full h-full object-cover"></video>
                 <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center bg-slate-900">
                     <svg class="w-12 h-12 mb-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
@@ -50,6 +50,8 @@
                     </svg>
                     <span class="text-sm">Натисніть «Увімкнути камеру»</span>
                 </div>
+                <!-- Прицільна рамка для візуального орієнтиру -->
+                <div id="aim-box" class="hidden pointer-events-none absolute inset-x-6 inset-y-12 border-2 border-emerald-400/80 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"></div>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
@@ -97,12 +99,12 @@
             </div>
             <div id="diag-specs" class="space-y-1 text-slate-300 leading-relaxed">
                 <div>• Платформа: <span id="diag-ua" class="text-sky-300">-</span></div>
-                <div>• Native BarcodeDetector: <span id="diag-native" class="text-sky-300">-</span></div>
+                <div>• Декодер: <span id="diag-native" class="text-sky-300">ZXing MultiFormatReader</span></div>
                 <div>• Доступні камери: <span id="diag-cameras" class="text-sky-300">ще не запитано</span></div>
                 <div>• Потік відео: <span id="diag-stream" class="text-emerald-300">не активний</span></div>
-                <div>• Фокус / Налаштування: <span id="diag-focus" class="text-emerald-300">-</span></div>
+                <div>• Фокус / Трек: <span id="diag-focus" class="text-emerald-300">-</span></div>
             </div>
-            <div class="bg-black/60 border border-slate-700 rounded p-2 max-h-32 overflow-y-auto space-y-1 text-[11px]" id="diag-log">
+            <div class="bg-black/60 border border-slate-700 rounded p-2 max-h-36 overflow-y-auto space-y-1 text-[11px]" id="diag-log">
                 <div class="text-slate-500">Журнал подій готовий...</div>
             </div>
         </div>
@@ -127,9 +129,12 @@
     <canvas id="diag-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-19 17:05";
+        const APP_VERSION = "2026-11-19 17:15";
 
-        let html5QrCode = null;
+        let codeReader = null;
+        let scanLoopId = null;
+        let isScanning = false;
+        let currentStream = null;
         let currentStep = 1;
         let tempShk1 = '';
         let boxes = [];
@@ -152,20 +157,31 @@
             logBox.prepend(line);
         }
 
+        function createReader() {
+            const hints = new Map();
+            const formats = [
+                ZXing.BarcodeFormat.CODE_128,
+                ZXing.BarcodeFormat.EAN_13,
+                ZXing.BarcodeFormat.EAN_8,
+                ZXing.BarcodeFormat.CODE_39,
+                ZXing.BarcodeFormat.UPC_A,
+                ZXing.BarcodeFormat.UPC_E,
+                ZXing.BarcodeFormat.ITF,
+                ZXing.BarcodeFormat.CODABAR,
+                ZXing.BarcodeFormat.QR_CODE,
+                ZXing.BarcodeFormat.DATA_MATRIX
+            ];
+            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+            return new ZXing.MultiFormatReader(hints);
+        }
+
         window.onload = function() {
             document.getElementById('app-version').innerText = `Версія: ${APP_VERSION}`;
-            
-            // Базова діагностика середовища
+            codeReader = createReader();
+
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
             document.getElementById('diag-ua').innerText = `${isIOS ? 'iOS' : navigator.platform} | HTTPS: ${window.location.protocol === 'https:' ? 'ТАК' : 'НІ'}`;
-            
-            const hasNative = 'BarcodeDetector' in window;
-            document.getElementById('diag-native').innerText = hasNative ? 'Підтримується' : 'Немає (працює ZXing JS)';
-            if (hasNative && window.BarcodeDetector.getSupportedFormats) {
-                window.BarcodeDetector.getSupportedFormats().then(formats => {
-                    logDiag(`Native формати: ${formats.join(', ')}`, 'info');
-                }).catch(() => {});
-            }
 
             const saved = localStorage.getItem('scanned_boxes');
             if (saved) {
@@ -210,256 +226,249 @@
         }
 
         async function initAndStartScanner() {
-            logDiag('Запит списку камер...', 'info');
+            logDiag('Запит доступу до камери...', 'info');
             try {
-                const devices = await Html5Qrcode.getCameras();
-                
-                if (devices && devices.length > 0) {
+                // Спочатку запитуємо базовий потік, щоб iOS відкрив назви камер
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                tempStream.getTracks().forEach(t => t.stop());
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+                if (videoDevices.length > 0) {
                     const select = document.getElementById('camera-select');
                     select.innerHTML = '';
-                    
-                    let preferredCameraId = devices[0].id;
+
+                    let preferredId = videoDevices[0].deviceId;
                     const camNames = [];
 
-                    devices.forEach((device, index) => {
-                        const option = document.createElement('option');
-                        option.value = device.id;
-                        const label = device.label || `Камера ${index + 1}`;
-                        option.text = label;
-                        select.appendChild(option);
-                        camNames.push(`[${index}] ${label}`);
+                    videoDevices.forEach((device, idx) => {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        const label = device.label || `Камера ${idx + 1}`;
+                        opt.text = label;
+                        select.appendChild(opt);
+                        camNames.push(`[${idx}] ${label}`);
 
-                        const lowerLabel = label.toLowerCase();
-                        if ((lowerLabel.includes('back') || lowerLabel.includes('задн') || lowerLabel.includes('environment')) 
-                            && !lowerLabel.includes('ultra') && !lowerLabel.includes('telephoto')) {
-                            preferredCameraId = device.id;
+                        const lower = label.toLowerCase();
+                        if ((lower.includes('back') || lower.includes('задн')) && !lower.includes('ultra') && !lower.includes('надшироко')) {
+                            preferredId = device.deviceId;
                         }
                     });
 
                     document.getElementById('diag-cameras').innerText = camNames.join(' | ');
-                    logDiag(`Знайдено камер: ${devices.length}`, 'ok');
+                    logDiag(`Знайдено камер: ${videoDevices.length}`, 'ok');
 
-                    select.value = preferredCameraId;
+                    select.value = preferredId;
                     document.getElementById('camera-select-wrapper').classList.remove('hidden');
-                    
-                    startScannerWithId(preferredCameraId);
+
+                    await startStream(preferredId);
                 } else {
-                    logDiag('Список камер порожній!', 'err');
-                    alert("Камери не знайдено. Перевірте дозволи для браузера в налаштуваннях iPhone.");
+                    logDiag('Відеокамер не знайдено!', 'err');
+                    alert("Камери не знайдено.");
                 }
             } catch (err) {
-                logDiag(`Помилка getCameras: ${err.message || err}`, 'err');
-                alert("Не вдалося отримати доступ до камери. Переконайтеся, що сайт відкрито через HTTPS і доступ дозволено.");
+                logDiag(`Помилка доступу до камери: ${err.message || err}`, 'err');
+                alert("Не вдалося запустити камеру. Перевірте дозволи Safari/Chrome.");
             }
         }
 
-        function startScannerWithId(cameraId) {
-            const placeholder = document.getElementById('camera-placeholder');
-            placeholder.style.display = 'none';
+        async function startStream(deviceId) {
+            stopStreamOnly();
             torchOn = false;
+            document.getElementById('camera-placeholder').style.display = 'none';
+            document.getElementById('aim-box').classList.remove('hidden');
 
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader", {
-                    formatsToSupport: [
-                        Html5QrcodeSupportedFormats.CODE_128,
-                        Html5QrcodeSupportedFormats.EAN_13,
-                        Html5QrcodeSupportedFormats.EAN_8,
-                        Html5QrcodeSupportedFormats.CODE_39,
-                        Html5QrcodeSupportedFormats.UPC_A,
-                        Html5QrcodeSupportedFormats.UPC_E,
-                        Html5QrcodeSupportedFormats.ITF,
-                        Html5QrcodeSupportedFormats.QR_CODE
-                    ],
-                    experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true
-                    }
-                });
-            }
-
-            const config = { 
-                fps: 15, 
-                qrbox: function(viewfinderWidth, viewfinderHeight) {
-                    return {
-                        width: Math.floor(viewfinderWidth * 0.85),
-                        height: Math.floor(viewfinderHeight * 0.45)
-                    };
-                },
-                videoConstraints: {
-                    deviceId: { exact: cameraId },
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    facingMode: deviceId ? undefined : 'environment',
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
-                }
+                },
+                audio: false
             };
 
-            logDiag(`Запуск камери ID: ${cameraId.slice(0, 12)}...`, 'info');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                await video.play();
 
-            html5QrCode.start(
-                cameraId, 
-                config, 
-                onScanSuccess,
-                () => {}
-            ).then(() => {
                 document.getElementById('btn-start-camera').classList.add('hidden');
                 document.getElementById('btn-stop-camera').classList.remove('hidden');
-                logDiag('Відеопотік успішно запущено', 'ok');
-                
-                // Перевірка реальних параметрів потоку через 800 мс
-                setTimeout(inspectVideoTrack, 800);
-            }).catch(err => {
-                logDiag(`Помилка start(): ${err.message || err}`, 'err');
-                alert("Помилка запуску обраної камери. Спробуйте вибрати іншу зі списку вище.");
-                placeholder.style.display = 'flex';
-            });
+
+                const track = stream.getVideoTracks()[0];
+                const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+                if (caps.torch) {
+                    document.getElementById('btn-torch').classList.remove('hidden');
+                } else {
+                    document.getElementById('btn-torch').classList.add('hidden');
+                }
+
+                setTimeout(() => {
+                    const settings = track && track.getSettings ? track.getSettings() : {};
+                    const focusMode = settings.focusMode || (caps.focusMode ? caps.focusMode.join('/') : 'невідомо');
+                    document.getElementById('diag-stream').innerText = `${video.videoWidth}x${video.videoHeight} px`;
+                    document.getElementById('diag-focus').innerText = `label="${track.label}" | focus=${focusMode}`;
+                    logDiag(`Потік запущено: ${track.label} (${video.videoWidth}x${video.videoHeight})`, 'ok');
+                }, 500);
+
+                isScanning = true;
+                scanLoop();
+            } catch (err) {
+                logDiag(`Помилка запуску потоку: ${err.message || err}`, 'err');
+                document.getElementById('camera-placeholder').style.display = 'flex';
+                document.getElementById('aim-box').classList.add('hidden');
+            }
         }
 
-        function inspectVideoTrack() {
-            const video = document.querySelector('#reader video');
-            if (!video) {
-                logDiag('Елемент <video> не знайдено у DOM', 'warn');
-                return;
+        function decodeFromCanvas(canvas) {
+            try {
+                const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+                const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
+                const result = codeReader.decode(binaryBitmap);
+                return result ? result.getText() : null;
+            } catch (e) {
+                return null;
             }
-            document.getElementById('diag-stream').innerText = `${video.videoWidth}x${video.videoHeight} px`;
-            
-            if (video.srcObject) {
-                const track = video.srcObject.getVideoTracks()[0];
-                if (track) {
-                    const settings = track.getSettings ? track.getSettings() : {};
-                    const caps = track.getCapabilities ? track.getCapabilities() : {};
-                    
-                    const focusInfo = settings.focusMode || (caps.focusMode ? caps.focusMode.join('/') : 'невідомо');
-                    document.getElementById('diag-focus').innerText = `label="${track.label}" | focus=${focusInfo}`;
-                    logDiag(`Активний трек: ${track.label} (${video.videoWidth}x${video.videoHeight})`, 'ok');
+        }
 
-                    if (caps.torch) {
-                        document.getElementById('btn-torch').classList.remove('hidden');
-                    } else {
-                        document.getElementById('btn-torch').classList.add('hidden');
-                    }
+        function scanLoop() {
+            if (!isScanning) return;
 
-                    // Спроба примусово увімкнути неперервний автофокус, якщо підтримується
-                    if (caps.focusMode && caps.focusMode.includes('continuous')) {
-                        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] })
-                            .then(() => logDiag('Увімкнено continuous autofocus', 'ok'))
-                            .catch(() => {});
-                    }
+            const video = document.getElementById('video');
+            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                const canvas = document.getElementById('diag-canvas');
+                // Масштабуємо до max 960px по більшій стороні для швидкого декодування без втрати різкості
+                const scale = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+                canvas.width = Math.floor(video.videoWidth * scale);
+                canvas.height = Math.floor(video.videoHeight * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                const decoded = decodeFromCanvas(canvas);
+                if (decoded) {
+                    onScanSuccess(decoded);
                 }
             }
+
+            scanLoopId = setTimeout(scanLoop, 140);
         }
 
-        async function toggleTorch() {
-            const video = document.querySelector('#reader video');
-            if (!video || !video.srcObject) return;
-            const track = video.srcObject.getVideoTracks()[0];
-            if (!track) return;
-            try {
-                torchOn = !torchOn;
-                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-                logDiag(`Ліхтарик: ${torchOn ? 'УВІМК' : 'ВИМК'}`, 'info');
-            } catch (e) {
-                logDiag(`Помилка ліхтарика: ${e.message}`, 'err');
-            }
-        }
-
-        // Тест розпізнавання поточного стоп-кадру з відео
         async function testCurrentFrame() {
-            const video = document.querySelector('#reader video');
-            if (!video || video.videoWidth === 0) {
+            const video = document.getElementById('video');
+            if (!video || !currentStream || video.videoWidth === 0) {
                 logDiag('Спочатку увімкніть камеру для тесту кадру!', 'warn');
                 return;
             }
 
-            logDiag(`Захоплення стоп-кадру ${video.videoWidth}x${video.videoHeight}...`, 'info');
             const canvas = document.getElementById('diag-canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // 1. Перевірка через нативний BarcodeDetector (якщо є в Safari)
-            if ('BarcodeDetector' in window) {
-                try {
-                    const detector = new window.BarcodeDetector();
-                    const barcodes = await detector.detect(canvas);
-                    if (barcodes.length > 0) {
-                        logDiag(`Native Detector ЗНАЙШОВ: "${barcodes[0].rawValue}" (${barcodes[0].format})`, 'ok');
-                    } else {
-                        logDiag('Native Detector: штрихкод у кадрі НЕ знайдено', 'warn');
-                    }
-                } catch (e) {
-                    logDiag(`Native Detector помилка: ${e.message}`, 'err');
-                }
+            logDiag(`Тест стоп-кадру ${canvas.width}x${canvas.height}...`, 'info');
+            const decoded = decodeFromCanvas(canvas);
+            if (decoded) {
+                logDiag(`УСПІХ у стоп-кадрі: "${decoded}"`, 'ok');
+                onScanSuccess(decoded);
+            } else {
+                logDiag('У стоп-кадрі штрихкод не розпізнано (перевірте фокус, відстань 15-25 см та світло)', 'warn');
             }
+        }
 
-            // 2. Перевірка через html5-qrcode scanFile
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
-                const file = new File([blob], "frame.jpg", { type: "image/jpeg" });
-                try {
-                    const res = await html5QrCode.scanFile(file, false);
-                    logDiag(`html5-qrcode ЗНАЙШОВ у стоп-кадрі: "${res}"`, 'ok');
-                } catch (err) {
-                    logDiag(`html5-qrcode стоп-кадр: не розпізнано (${err})`, 'err');
-                }
-            }, 'image/jpeg', 0.95);
+        async function toggleTorch() {
+            if (!currentStream) return;
+            const track = currentStream.getVideoTracks()[0];
+            if (!track) return;
+            try {
+                torchOn = !torchOn;
+                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+                logDiag(`Ліхтарик: ${torchOn ? 'УВІМК' : 'ВИМК'}`, 'info');
+            } catch (e) {
+                logDiag(`Ліхтарик не підтримується: ${e.message}`, 'err');
+            }
         }
 
         async function switchCamera() {
-            const cameraId = document.getElementById('camera-select').value;
-            logDiag(`Перемикання на камеру: ${cameraId.slice(0, 12)}...`, 'info');
-            if (html5QrCode && html5QrCode.isScanning) {
-                await html5QrCode.stop();
+            const id = document.getElementById('camera-select').value;
+            logDiag(`Перемикання на камеру...`, 'info');
+            await startStream(id);
+        }
+
+        function stopStreamOnly() {
+            isScanning = false;
+            if (scanLoopId) {
+                clearTimeout(scanLoopId);
+                scanLoopId = null;
             }
-            startScannerWithId(cameraId);
+            if (currentStream) {
+                currentStream.getTracks().forEach(t => t.stop());
+                currentStream = null;
+            }
         }
 
         function stopScanner() {
-            if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => {
-                    document.getElementById('camera-placeholder').style.display = 'flex';
-                    document.getElementById('btn-start-camera').classList.remove('hidden');
-                    document.getElementById('btn-stop-camera').classList.add('hidden');
-                    document.getElementById('btn-torch').classList.add('hidden');
-                    document.getElementById('diag-stream').innerText = 'зупинено';
-                    logDiag('Камеру вимкнено', 'info');
-                }).catch(err => logDiag(`Помилка зупинки: ${err}`, 'err'));
-            }
+            stopStreamOnly();
+            document.getElementById('camera-placeholder').style.display = 'flex';
+            document.getElementById('aim-box').classList.add('hidden');
+            document.getElementById('btn-start-camera').classList.remove('hidden');
+            document.getElementById('btn-stop-camera').classList.add('hidden');
+            document.getElementById('btn-torch').classList.add('hidden');
+            document.getElementById('diag-stream').innerText = 'зупинено';
+            logDiag('Камеру зупинено', 'info');
         }
 
         function onScanSuccess(decodedText) {
             const now = Date.now();
             const code = decodedText.trim();
-            
+            if (!code) return;
+
             if (code === lastScannedCode && (now - lastScanTime) < 1500) {
                 return;
             }
             lastScannedCode = code;
             lastScanTime = now;
 
-            logDiag(`УСПІШНО ЗЧИТАНО: "${code}"`, 'ok');
+            logDiag(`ЗЧИТАНО: "${code}"`, 'ok');
             playBeep();
             if (navigator.vibrate) navigator.vibrate(100);
             processScannedValue(code);
         }
 
         function scanFromFile(e) {
-            if (e.target.files.length == 0) return;
-            const imageFile = e.target.files[0];
-            logDiag(`Сканування з файлу: ${imageFile.name} (${Math.round(imageFile.size/1024)} KB)`, 'info');
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
+            if (!e.target.files || e.target.files.length === 0) return;
+            const file = e.target.files[0];
+            logDiag(`Читання файлу: ${file.name}...`, 'info');
 
-            html5QrCode.scanFile(imageFile, true)
-                .then(decodedText => {
-                    logDiag(`Файл розпізнано: "${decodedText}"`, 'ok');
-                    playBeep();
-                    processScannedValue(decodedText.trim());
-                })
-                .catch(err => {
-                    logDiag(`Помилка сканування файлу: ${err}`, 'err');
-                    alert("Не вдалося розпізнати штрихкод на фото. Спробуйте зробити чіткіше фото або введіть вручну.");
-                });
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('diag-canvas');
+                    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+                    canvas.width = Math.floor(img.width * scale);
+                    canvas.height = Math.floor(img.height * scale);
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    const decoded = decodeFromCanvas(canvas);
+                    if (decoded) {
+                        logDiag(`З файлу зчитано: "${decoded}"`, 'ok');
+                        playBeep();
+                        processScannedValue(decoded.trim());
+                    } else {
+                        logDiag('Штрихкод на фото не знайдено', 'err');
+                        alert("Не вдалося розпізнати штрихкод на фото. Спробуйте зробити чіткіше фото або введіть вручну.");
+                    }
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
         }
 
         function handleManualSubmit() {
