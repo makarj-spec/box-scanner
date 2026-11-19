@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-19 18:18)</title>
+    <title>Сканер коробок (v2026-11-19 18:36)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-19 18:18
+                Версія: 2026-11-19 18:36
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -105,6 +105,57 @@
                 </select>
             </div>
 
+            <!-- Модальне вікно вибору області на фото з галереї -->
+            <div id="photo-crop-modal" class="hidden bg-slate-900 text-white rounded-xl p-4 space-y-3 border-2 border-indigo-400">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-bold uppercase tracking-wide text-indigo-300">✂️ Виберіть область на фото</span>
+                    <div class="flex items-center gap-1.5">
+                        <span id="photo-rotation-label" class="text-[11px] font-mono bg-slate-800 text-indigo-200 px-2 py-0.5 rounded">0°</span>
+                        <button onclick="rotatePhoto90()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded font-medium transition">
+                            ↻ Повернути 90°
+                        </button>
+                        <button onclick="closePhotoCropModal()" class="text-xs text-slate-300 hover:text-white px-2 py-1 rounded bg-slate-800">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+                <p class="text-[11px] text-slate-300">Перетягніть рамку на потрібний штрихкод або текст і підлаштуйте розмір.</p>
+
+                <div id="photo-stage" class="relative w-full h-80 overflow-hidden rounded-lg bg-black flex items-center justify-center select-none touch-none">
+                    <div id="photo-rotator" class="w-full h-full flex items-center justify-center transition-transform duration-150">
+                        <img id="photo-preview-img" src="" alt="Фото для розпізнавання" class="max-w-full max-h-full object-contain block pointer-events-none">
+                    </div>
+                    <div id="photo-crop-box"
+                         onpointerdown="startCropDrag(event)"
+                         style="left: 15%; top: 32.5%; width: 70%; height: 35%;"
+                         class="absolute border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] cursor-move rounded">
+                        <span class="absolute -top-5 left-0 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
+                            ВИБРАНА ЗОНА
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 text-xs text-slate-300">
+                    <label class="space-y-1">
+                        <div class="flex justify-between"><span>Ширина зони:</span> <span id="crop-w-val" class="font-mono text-emerald-300">70%</span></div>
+                        <input type="range" id="crop-w-slider" min="15" max="95" value="70" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
+                    </label>
+                    <label class="space-y-1">
+                        <div class="flex justify-between"><span>Висота зони:</span> <span id="crop-h-val" class="font-mono text-emerald-300">35%</span></div>
+                        <input type="range" id="crop-h-slider" min="12" max="90" value="35" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button id="btn-scan-cropped-photo" onclick="scanCroppedPhoto()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-3 rounded-lg transition text-xs">
+                        🔍 Розпізнати вибране
+                    </button>
+                    <button onclick="resetCropBox()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-2.5 px-3 rounded-lg transition text-xs">
+                        ↺ По центру
+                    </button>
+                </div>
+            </div>
+
             <!-- Вікно камери -->
             <div id="reader-container" class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center">
                 <video id="video" playsinline muted autoplay class="w-full h-full object-cover"></video>
@@ -115,7 +166,6 @@
                     </svg>
                     <span class="text-sm">Натисніть «Увімкнути камеру»</span>
                 </div>
-                <!-- Область сканування: розмір керується повзунками -->
                 <div id="aim-box" style="width: 84%; height: 48%;" class="hidden pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-colors duration-150">
                     <span class="absolute -top-5 left-1 bg-black/75 text-amber-200 text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
                         ЗОНА СКАНУВАННЯ
@@ -126,7 +176,7 @@
                 </div>
             </div>
 
-            <!-- Регулювання розміру рамки -->
+            <!-- Регулювання розміру рамки камери -->
             <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                 <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600 uppercase">
                     <span>📐 Розмір зони сканування</span>
@@ -182,7 +232,7 @@
                 <button id="btn-torch" onclick="toggleTorch()" class="bg-amber-100 hover:bg-amber-200 text-amber-900 font-medium py-2.5 px-4 rounded-lg transition text-sm hidden">
                     🔦 Ліхтарик
                 </button>
-                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="scanFromFile(event)">
+                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="openPhotoCropper(event)">
             </div>
 
             <!-- Ручне введення -->
@@ -231,9 +281,10 @@
     </main>
 
     <canvas id="scan-canvas" class="hidden"></canvas>
+    <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-19 18:18";
+        const APP_VERSION = "2026-11-19 18:36";
 
         let codeReader = null;
         let ocrWorker = null;
@@ -247,7 +298,7 @@
         let inputType = 'both'; // 'both' (код або текст) або 'ocr' (лише текст)
         let ocrLang = 'ukr+eng'; // 'eng', 'ukr', 'ukr+eng'
         let pinShk1 = false; // закріпити ШК1 для партії коробок
-        let isEditingHighlight = false; // блокує автооновлення поля під час ручного редагування
+        let isEditingHighlight = false;
         let currentStep = 1;
         let tempShk1 = '';
         let pendingDuplicateShk2 = '';
@@ -256,6 +307,11 @@
         let lastAutoTime = 0;
         let boxes = [];
         let torchOn = false;
+
+        // Стан рамки вибору області на фото та повороту зображення
+        let cropState = { leftPct: 15, topPct: 32.5, widthPct: 70, heightPct: 35 };
+        let photoRotationDeg = 0;
+        let dragState = null;
 
         function createReader() {
             const hints = new Map();
@@ -332,7 +388,225 @@
                 boxes = JSON.parse(saved);
                 renderBoxes();
             }
+
+            window.addEventListener('pointermove', onCropDragMove);
+            window.addEventListener('pointerup', onCropDragEnd);
+            window.addEventListener('pointercancel', onCropDragEnd);
         };
+
+        function applyPhotoRotation() {
+            const rotator = document.getElementById('photo-rotator');
+            const img = document.getElementById('photo-preview-img');
+            const stage = document.getElementById('photo-stage');
+
+            photoRotationDeg = ((photoRotationDeg % 360) + 360) % 360;
+            document.getElementById('photo-rotation-label').innerText = `${photoRotationDeg}°`;
+
+            const isSideways = photoRotationDeg === 90 || photoRotationDeg === 270;
+            const stageW = stage.clientWidth || 360;
+            const stageH = stage.clientHeight || 320;
+
+            if (isSideways) {
+                // При повороті на 90°/270° обмежуємо висоту/ширину так, щоб зображення не вилазило за межі сцени
+                img.style.maxWidth = `${stageH * 0.92}px`;
+                img.style.maxHeight = `${stageW * 0.92}px`;
+            } else {
+                img.style.maxWidth = '100%';
+                img.style.maxHeight = '100%';
+            }
+
+            rotator.style.transform = `rotate(${photoRotationDeg}deg)`;
+        }
+
+        function rotatePhoto90() {
+            photoRotationDeg = (photoRotationDeg + 90) % 360;
+            applyPhotoRotation();
+        }
+
+        function applyCropBoxStyles() {
+            const box = document.getElementById('photo-crop-box');
+            box.style.left = `${cropState.leftPct}%`;
+            box.style.top = `${cropState.topPct}%`;
+            box.style.width = `${cropState.widthPct}%`;
+            box.style.height = `${cropState.heightPct}%`;
+            document.getElementById('crop-w-val').innerText = `${Math.round(cropState.widthPct)}%`;
+            document.getElementById('crop-h-val').innerText = `${Math.round(cropState.heightPct)}%`;
+        }
+
+        function updateCropBoxSize() {
+            const w = Number(document.getElementById('crop-w-slider').value);
+            const h = Number(document.getElementById('crop-h-slider').value);
+            cropState.widthPct = w;
+            cropState.heightPct = h;
+            cropState.leftPct = Math.min(cropState.leftPct, 100 - cropState.widthPct);
+            cropState.topPct = Math.min(cropState.topPct, 100 - cropState.heightPct);
+            applyCropBoxStyles();
+        }
+
+        function resetCropBox() {
+            cropState.widthPct = 70;
+            cropState.heightPct = 35;
+            cropState.leftPct = 15;
+            cropState.topPct = 32.5;
+            document.getElementById('crop-w-slider').value = 70;
+            document.getElementById('crop-h-slider').value = 35;
+            applyCropBoxStyles();
+        }
+
+        function startCropDrag(e) {
+            e.preventDefault();
+            dragState = {
+                startX: e.clientX,
+                startY: e.clientY,
+                origLeft: cropState.leftPct,
+                origTop: cropState.topPct
+            };
+        }
+
+        function onCropDragMove(e) {
+            if (!dragState) return;
+            const stage = document.getElementById('photo-stage');
+            const rect = stage.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const dxPct = ((e.clientX - dragState.startX) / rect.width) * 100;
+            const dyPct = ((e.clientY - dragState.startY) / rect.height) * 100;
+
+            cropState.leftPct = Math.max(0, Math.min(100 - cropState.widthPct, dragState.origLeft + dxPct));
+            cropState.topPct = Math.max(0, Math.min(100 - cropState.heightPct, dragState.origTop + dyPct));
+            applyCropBoxStyles();
+        }
+
+        function onCropDragEnd() {
+            dragState = null;
+        }
+
+        function openPhotoCropper(e) {
+            if (!e.target.files || e.target.files.length === 0) return;
+            const file = e.target.files[0];
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const img = document.getElementById('photo-preview-img');
+                img.onload = function() {
+                    photoRotationDeg = 0;
+                    resetCropBox();
+                    document.getElementById('photo-crop-modal').classList.remove('hidden');
+                    applyPhotoRotation();
+                    document.getElementById('photo-crop-modal').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+
+        function closePhotoCropModal() {
+            dragState = null;
+            photoRotationDeg = 0;
+            document.getElementById('photo-crop-modal').classList.add('hidden');
+            document.getElementById('photo-preview-img').src = '';
+            document.getElementById('photo-rotator').style.transform = 'rotate(0deg)';
+        }
+
+        // Формує полотно з урахуванням повороту фото на 0/90/180/270 градусів
+        function buildRotatedPhotoCanvas(img) {
+            const natW = img.naturalWidth;
+            const natH = img.naturalHeight;
+            const rotCanvas = document.getElementById('rotated-photo-canvas');
+            const ctx = rotCanvas.getContext('2d');
+
+            const isSideways = photoRotationDeg === 90 || photoRotationDeg === 270;
+            rotCanvas.width = isSideways ? natH : natW;
+            rotCanvas.height = isSideways ? natW : natH;
+
+            ctx.save();
+            ctx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
+            ctx.rotate((photoRotationDeg * Math.PI) / 180);
+            ctx.drawImage(img, -natW / 2, -natH / 2);
+            ctx.restore();
+
+            return rotCanvas;
+        }
+
+        async function scanCroppedPhoto() {
+            const img = document.getElementById('photo-preview-img');
+            const cropBox = document.getElementById('photo-crop-box');
+            if (!img.src || !img.naturalWidth || !img.naturalHeight) return;
+
+            const rotCanvas = buildRotatedPhotoCanvas(img);
+            const rotW = rotCanvas.width;
+            const rotH = rotCanvas.height;
+
+            // Отримуємо реальну візуальну область повернутого зображення всередині #photo-rotator
+            const rotator = document.getElementById('photo-rotator');
+            const rotatorRect = rotator.getBoundingClientRect();
+            const boxRect = cropBox.getBoundingClientRect();
+
+            const displayedImgRatio = rotW / rotH;
+            const containerRatio = rotatorRect.width / rotatorRect.height;
+
+            let dispW, dispH, dispLeft, dispTop;
+            if (displayedImgRatio > containerRatio) {
+                dispW = rotatorRect.width;
+                dispH = dispW / displayedImgRatio;
+                dispLeft = rotatorRect.left;
+                dispTop = rotatorRect.top + (rotatorRect.height - dispH) / 2;
+            } else {
+                dispH = rotatorRect.height;
+                dispW = dispH * displayedImgRatio;
+                dispLeft = rotatorRect.left + (rotatorRect.width - dispW) / 2;
+                dispTop = rotatorRect.top;
+            }
+
+            const relLeft = Math.max(0, Math.min(1, (boxRect.left - dispLeft) / dispW));
+            const relTop = Math.max(0, Math.min(1, (boxRect.top - dispTop) / dispH));
+            const relWidth = Math.max(0.02, Math.min(1 - relLeft, boxRect.width / dispW));
+            const relHeight = Math.max(0.02, Math.min(1 - relTop, boxRect.height / dispH));
+
+            const sx = Math.floor(relLeft * rotW);
+            const sy = Math.floor(relTop * rotH);
+            const sw = Math.max(1, Math.floor(relWidth * rotW));
+            const sh = Math.max(1, Math.floor(relHeight * rotH));
+
+            const canvas = document.getElementById('scan-canvas');
+            const scale = Math.min(1, 1600 / Math.max(sw, sh));
+            canvas.width = Math.max(1, Math.floor(sw * scale));
+            canvas.height = Math.max(1, Math.floor(sh * scale));
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+            const btn = document.getElementById('btn-scan-cropped-photo');
+            const origLabel = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = '⏳ Сканування...';
+
+            try {
+                if (inputType === 'both') {
+                    const decoded = decodeBarcodeFromCanvas(canvas);
+                    if (decoded && decoded.trim()) {
+                        closePhotoCropModal();
+                        handleDetectedCode(decoded, 'Штрихкод з області фото');
+                        return;
+                    }
+                }
+
+                if (currentStep === 1) {
+                    const text = await recognizeTextFromCanvas(canvas);
+                    if (text && text.trim()) {
+                        closePhotoCropModal();
+                        handleDetectedCode(text, `Текст з області фото (${ocrLang.toUpperCase()})`);
+                        return;
+                    }
+                }
+
+                alert("У вибраній області нічого не розпізнано. Поверніть фото, пересуньте рамку або змініть мову OCR.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = origLabel;
+            }
+        }
 
         function updateAimBoxSize() {
             const w = document.getElementById('aim-w-slider').value;
@@ -635,7 +909,6 @@
             if (!code) return;
 
             if (scanMode === 'manual') {
-                // Не перезаписуємо поле, поки користувач редагує його вручну
                 if (isEditingHighlight) return;
                 setHighlightedCode(code, sourceLabel);
             } else {
@@ -785,45 +1058,6 @@
             document.getElementById('btn-start-camera').classList.remove('hidden');
             document.getElementById('btn-stop-camera').classList.add('hidden');
             document.getElementById('btn-torch').classList.add('hidden');
-        }
-
-        function scanFromFile(e) {
-            if (!e.target.files || e.target.files.length === 0) return;
-            const file = e.target.files[0];
-
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const img = new Image();
-                img.onload = async function() {
-                    const canvas = document.getElementById('scan-canvas');
-                    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
-                    canvas.width = Math.floor(img.width * scale);
-                    canvas.height = Math.floor(img.height * scale);
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                    if (inputType === 'both') {
-                        const decoded = decodeBarcodeFromCanvas(canvas);
-                        if (decoded && decoded.trim()) {
-                            handleDetectedCode(decoded, 'Штрихкод з фото');
-                            return;
-                        }
-                    }
-
-                    if (currentStep === 1) {
-                        const text = await recognizeTextFromCanvas(canvas);
-                        if (text && text.trim()) {
-                            handleDetectedCode(text, `Текст з фото (${ocrLang.toUpperCase()})`);
-                            return;
-                        }
-                    }
-
-                    alert("Не вдалося розпізнати код або текст на фото. Спробуйте зробити чіткіше фото або введіть вручну.");
-                };
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-            e.target.value = '';
         }
 
         function handleManualSubmit() {
