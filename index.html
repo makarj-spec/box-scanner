@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-22 14:09)</title>
+    <title>Сканер коробок (v2026-11-22 14:27)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 14:09
+                Версія: 2026-11-22 14:27
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -77,7 +77,7 @@
                         </button>
                     </div>
                 </div>
-                <p class="text-[11px] text-slate-300">Перетягніть рамку на потрібний штрихкод або текст і підлаштуйте розмір.</p>
+                <p class="text-[11px] text-slate-300">Перетягніть рамку на потрібний штрихкод або текст і підлаштуйте розмір. Використовується повна чіткість знімка.</p>
 
                 <div id="photo-stage" class="relative w-full h-80 overflow-hidden rounded-lg bg-black flex items-center justify-center select-none touch-none">
                     <div id="photo-rotator" class="w-full h-full flex items-center justify-center transition-transform duration-150">
@@ -92,6 +92,11 @@
                         </span>
                     </div>
                 </div>
+
+                <label class="flex items-center justify-between bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-2 cursor-pointer select-none text-xs">
+                    <span>⚡ Підсилити контраст (для відблисків / тьмяного тексту)</span>
+                    <input type="checkbox" id="photo-boost-contrast" class="w-4 h-4 accent-emerald-400 rounded">
+                </label>
 
                 <div class="grid grid-cols-2 gap-3 text-xs text-slate-300">
                     <label class="space-y-1">
@@ -158,13 +163,16 @@
             <!-- Блок ручного підтвердження та редагування виділеного значення -->
             <div id="manual-confirm-box" class="bg-amber-50 border border-amber-300 rounded-xl p-3.5 space-y-2.5">
                 <div class="flex items-center justify-between text-xs gap-2">
-                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код / текст (можна редагувати)</span>
-                    <span id="confirm-status" class="text-amber-700 text-right">Помістіть код або назву в рамку</span>
+                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код / текст</span>
+                    <button onclick="pasteIntoHighlight()" class="text-[11px] bg-amber-200/80 hover:bg-amber-300/80 text-amber-950 px-2 py-0.5 rounded font-semibold transition">
+                        📋 Вставити з буфера
+                    </button>
                 </div>
+                <div id="confirm-status" class="text-xs text-amber-700">Помістіть код або назву в рамку чи вставте скопійоване</div>
                 <input
                     type="text"
                     id="highlighted-code"
-                    placeholder="Очікування розпізнавання..."
+                    placeholder="Очікування розпізнавання або вставки..."
                     oninput="handleHighlightEdit(this.value)"
                     onfocus="isEditingHighlight = true"
                     onblur="isEditingHighlight = false"
@@ -315,7 +323,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 14:09";
+        const APP_VERSION = "2026-11-22 14:27";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -403,7 +411,7 @@
             ocrWorkerLang = ocrLang;
             if (!highlightedCode) {
                 document.getElementById('confirm-status').innerText = prevStatus.startsWith('Завантаження')
-                    ? 'Помістіть код або назву в рамку'
+                    ? 'Помістіть код або назву в рамку чи вставте скопійоване'
                     : prevStatus;
             }
             return ocrWorker;
@@ -456,7 +464,22 @@
             window.addEventListener('pointercancel', onCropDragEnd);
         };
 
-        // Дотик по відео: переміщує зону сканування у точку дотику та запускає фокусування там
+        async function pasteIntoHighlight() {
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = (await navigator.clipboard.readText() || '').trim();
+                    if (text) {
+                        setHighlightedCode(text, 'З буфера обміну');
+                        return;
+                    }
+                }
+            } catch (e) {}
+
+            const input = document.getElementById('highlighted-code');
+            input.focus();
+            document.getElementById('confirm-status').innerText = 'Натисніть і утримуйте поле, щоб вставити скопійований текст';
+        }
+
         async function handleVideoTapFocus(e) {
             if (!isScanning || !currentStream) return;
             const container = document.getElementById('reader-container');
@@ -474,13 +497,9 @@
             const clampedX = Math.max(boxW / 2, Math.min(rect.width - boxW / 2, tapX));
             const clampedY = Math.max(boxH / 2, Math.min(rect.height - boxH / 2, tapY));
 
-            const leftPct = (clampedX / rect.width) * 100;
-            const topPct = (clampedY / rect.height) * 100;
+            aimBox.style.left = `${(clampedX / rect.width) * 100}%`;
+            aimBox.style.top = `${(clampedY / rect.height) * 100}%`;
 
-            aimBox.style.left = `${leftPct}%`;
-            aimBox.style.top = `${topPct}%`;
-
-            // Візуальне кільце фокусу у точці дотику
             reticle.style.left = `${(tapX / rect.width) * 100}%`;
             reticle.style.top = `${(tapY / rect.height) * 100}%`;
             reticle.classList.remove('hidden');
@@ -489,7 +508,6 @@
                 reticle.classList.add('hidden');
             }, 650);
 
-            // Спроба апаратного фокусування у вибраній точці
             const track = currentStream.getVideoTracks()[0];
             if (track && track.applyConstraints) {
                 const normX = Math.max(0, Math.min(1, tapX / rect.width));
@@ -515,7 +533,6 @@
                 }
             }
 
-            // Прискорюємо наступну перевірку кадру в точці сканування
             lastOcrTime = 0;
         }
 
@@ -675,9 +692,27 @@
             return rotCanvas;
         }
 
+        function applyHighContrastToCanvas(canvas) {
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            const contrast = 1.65;
+            const intercept = 128 * (1 - contrast);
+
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                const val = Math.max(0, Math.min(255, gray * contrast + intercept));
+                data[i] = val;
+                data[i + 1] = val;
+                data[i + 2] = val;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
         async function scanCroppedPhoto() {
             const img = document.getElementById('photo-preview-img');
             const cropBox = document.getElementById('photo-crop-box');
+            const boostContrast = document.getElementById('photo-boost-contrast').checked;
             if (!img.src || !img.naturalWidth || !img.naturalHeight) return;
 
             const rotCanvas = buildRotatedPhotoCanvas(img);
@@ -714,13 +749,18 @@
             const sw = Math.max(1, Math.floor(relWidth * rotW));
             const sh = Math.max(1, Math.floor(relHeight * rotH));
 
+            // Зберігаємо високу чіткість для фото з галереї (до 3200 px по більшій стороні)
             const canvas = document.getElementById('scan-canvas');
-            const scale = Math.min(1, 1600 / Math.max(sw, sh));
+            const scale = Math.min(1, 3200 / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
             canvas.height = Math.max(1, Math.floor(sh * scale));
 
             const ctx = canvas.getContext('2d');
             ctx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+            if (boostContrast) {
+                applyHighContrastToCanvas(canvas);
+            }
 
             const btn = document.getElementById('btn-scan-cropped-photo');
             const origLabel = btn.innerText;
@@ -732,7 +772,7 @@
                     const decoded = await decodeBarcodeSmart(canvas);
                     if (decoded && decoded.trim()) {
                         closePhotoCropModal();
-                        handleDetectedCode(decoded, 'Штрихкод з області фото');
+                        handleDetectedCode(decoded, 'Штрихкод з фото (HD)');
                         return;
                     }
                 }
@@ -741,12 +781,12 @@
                     const text = await recognizeTextFromCanvas(canvas);
                     if (text && text.trim()) {
                         closePhotoCropModal();
-                        handleDetectedCode(text, `Текст з області фото (${ocrLang.toUpperCase()})`);
+                        handleDetectedCode(text, `Текст з фото (${ocrLang.toUpperCase()})`);
                         return;
                     }
                 }
 
-                alert("У вибраній області нічого не розпізнано. Поверніть фото, пересуньте рамку або змініть мову OCR.");
+                alert("У вибраній області нічого не розпізнано. Спробуйте увімкнути «Підсилити контраст», повернути фото або змінити мову OCR.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = origLabel;
@@ -1147,11 +1187,11 @@
             document.getElementById('btn-confirm-code').disabled = !hasValue;
             document.getElementById('btn-clear-highlight').disabled = !hasValue;
             if (hasValue) {
-                document.getElementById('confirm-status').innerText = 'Відредаговано — натисніть «Зафіксувати»';
-                document.getElementById('confirm-status').className = 'text-indigo-700 font-semibold';
+                document.getElementById('confirm-status').innerText = 'Готово до фіксації — натисніть «Зафіксувати»';
+                document.getElementById('confirm-status').className = 'text-xs text-indigo-700 font-semibold';
             } else {
-                document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку';
-                document.getElementById('confirm-status').className = 'text-amber-700';
+                document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку чи вставте скопійоване';
+                document.getElementById('confirm-status').className = 'text-xs text-amber-700';
             }
         }
 
@@ -1159,7 +1199,7 @@
             highlightedCode = code;
             document.getElementById('highlighted-code').value = code;
             document.getElementById('confirm-status').innerText = `${sourceLabel} — натисніть «Зафіксувати»`;
-            document.getElementById('confirm-status').className = 'text-emerald-700 font-semibold';
+            document.getElementById('confirm-status').className = 'text-xs text-emerald-700 font-semibold';
             document.getElementById('btn-confirm-code').disabled = false;
             document.getElementById('btn-clear-highlight').disabled = false;
 
@@ -1176,8 +1216,8 @@
             highlightedCode = '';
             isEditingHighlight = false;
             document.getElementById('highlighted-code').value = '';
-            document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку';
-            document.getElementById('confirm-status').className = 'text-amber-700';
+            document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку чи вставте скопійоване';
+            document.getElementById('confirm-status').className = 'text-xs text-amber-700';
             document.getElementById('btn-confirm-code').disabled = true;
             document.getElementById('btn-clear-highlight').disabled = true;
 
