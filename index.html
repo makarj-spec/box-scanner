@@ -6,19 +6,20 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-22 14:56)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 15:55)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
 
     <header class="bg-indigo-600 text-white shadow-md p-4 text-center">
         <h1 class="text-2xl font-bold">📦 Сканер коробок</h1>
-        <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
+        <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 14:56
+                Версія: 2026-11-22 15:55
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -27,6 +28,57 @@
     </header>
 
     <main class="flex-grow container mx-auto p-4 max-w-xl space-y-5">
+
+        <!-- Блок інвентаризації та звірки з XLS (Заводський номер + Інв. № в SAP) -->
+        <div class="bg-white rounded-xl shadow-md p-4 space-y-3 border border-indigo-100">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h2 class="font-bold text-sm text-slate-800">📊 Інвентаризація (Заводський № та Інв. № SAP)</h2>
+                    <p id="xls-file-info" class="text-[11px] text-slate-500">Файл опису не завантажено</p>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="document.getElementById('xls-input').click()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
+                        📂 Завантажити XLS
+                    </button>
+                    <button id="btn-clear-xls" onclick="clearInventoryBase()" class="hidden text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1.5 rounded-lg font-medium transition" title="Очистити базу XLS">
+                        ✕
+                    </button>
+                    <input type="file" id="xls-input" accept=".xls,.xlsx,.csv" class="hidden" onchange="handleXlsUpload(event)">
+                </div>
+            </div>
+
+            <!-- Статистика звірки -->
+            <div id="inventory-stats-panel" class="hidden space-y-2.5 pt-2 border-t border-slate-100">
+                <div class="grid grid-cols-4 gap-1.5 text-center text-xs">
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                        <div class="text-[10px] text-slate-500 uppercase">В описі</div>
+                        <div id="stat-xls-total" class="font-bold text-sm text-slate-800">0</div>
+                    </div>
+                    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                        <div class="text-[10px] text-emerald-700 uppercase">Знайдено</div>
+                        <div id="stat-xls-matched" class="font-bold text-sm text-emerald-700">0</div>
+                    </div>
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                        <div class="text-[10px] text-amber-700 uppercase">Нестача</div>
+                        <div id="stat-xls-missing" class="font-bold text-sm text-amber-700">0</div>
+                    </div>
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                        <div class="text-[10px] text-purple-700 uppercase">Надлишок</div>
+                        <div id="stat-xls-extra" class="font-bold text-sm text-purple-700">0</div>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <label class="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                        <input type="checkbox" id="autofill-shk1-from-xls" checked class="w-3.5 h-3.5 accent-indigo-600 rounded">
+                        <span>Підставляти назву з опису по Заводському / Інв. №</span>
+                    </label>
+                    <button onclick="exportReconciliationXlsx()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
+                        📥 Зберегти файл звірки XLSX
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Основна робоча картка сканера -->
         <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
@@ -49,7 +101,7 @@
                 <div class="flex items-start gap-2">
                     <span class="text-lg leading-none">⚠️</span>
                     <div class="text-xs space-y-1">
-                        <div class="font-bold text-sm text-rose-700">Дублікат серійного номера (ШК2)!</div>
+                        <div class="font-bold text-sm text-rose-700">Дублікат серійного / інв. номера (ШК2)!</div>
                         <div id="duplicate-details" class="text-rose-800"></div>
                     </div>
                 </div>
@@ -223,11 +275,11 @@
                         Скасувати ШК1
                     </button>
                 </div>
-                <div><b>ШК2 (Серійний №):</b> <span id="val-shk2" class="text-indigo-600 font-semibold">очікується...</span></div>
+                <div><b>ШК2 (Заводський / Інв. №):</b> <span id="val-shk2" class="text-indigo-600 font-semibold">очікується...</span></div>
             </div>
         </div>
 
-        <!-- Список відсканованих коробок -->
+        <!-- Список відсканованих коробок та вкладка нестачі по XLS -->
         <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
             <div class="flex flex-wrap justify-between items-center gap-2">
                 <h2 class="font-bold text-lg text-slate-700">Відскановані коробки (<span id="box-count">0</span>)</h2>
@@ -244,7 +296,17 @@
                 </div>
             </div>
 
-            <div id="boxes-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+            <!-- Фільтр перегляду при завантаженому XLS -->
+            <div id="list-tabs" class="hidden grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+                <button id="tab-scanned" onclick="setListTab('scanned')" class="py-1.5 px-2.5 rounded-lg bg-white text-indigo-700 shadow-sm transition">
+                    📦 Відскановані (<span id="tab-scanned-count">0</span>)
+                </button>
+                <button id="tab-missing" onclick="setListTab('missing')" class="py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
+                    ⏳ Нестача з опису (<span id="tab-missing-count">0</span>)
+                </button>
+            </div>
+
+            <div id="boxes-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
                 <div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>
             </div>
         </div>
@@ -325,7 +387,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 14:56";
+        const APP_VERSION = "2026-11-22 15:55";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -351,6 +413,19 @@
         let lastAutoTime = 0;
         let boxes = [];
         let torchOn = false;
+
+        // Зберігаємо сирі рядки та заголовки завантаженого опису, щоб помітити знайдені рядки і додати аркуш "Надлишок"
+        let xlsRawRows = [];
+        let xlsHeaderRowIndex = -1;
+        let xlsNameCol = 1;
+        let xlsSerialCol = 4;
+        let xlsSapInvCol = 6;
+        let xlsGroupCol = 17;
+        let xlsDataEndRow = -1;
+
+        let xlsInventory = [];
+        let xlsFileName = '';
+        let currentListTab = 'scanned';
 
         let cropState = { leftPct: 12, topPct: 27.5, widthPct: 76, heightPct: 45 };
         let photoRotationDeg = 0;
@@ -455,16 +530,334 @@
             pinShk1 = savedPin;
             document.getElementById('pin-shk1-toggle').checked = savedPin;
 
+            const savedXlsState = localStorage.getItem('xls_inventory_sap_v2');
+            if (savedXlsState) {
+                try {
+                    const parsedState = JSON.parse(savedXlsState);
+                    xlsInventory = parsedState.items || [];
+                    xlsFileName = parsedState.fileName || 'Завантажений XLS';
+                    xlsRawRows = parsedState.rawRows || [];
+                    xlsHeaderRowIndex = parsedState.headerRowIndex ?? -1;
+                    xlsNameCol = parsedState.nameCol ?? 1;
+                    xlsSerialCol = parsedState.serialCol ?? 4;
+                    xlsSapInvCol = parsedState.sapInvCol ?? 6;
+                    xlsGroupCol = parsedState.groupCol ?? 17;
+                    xlsDataEndRow = parsedState.dataEndRow ?? -1;
+                } catch (e) {}
+            }
+
             const saved = localStorage.getItem('scanned_boxes');
             if (saved) {
                 boxes = JSON.parse(saved);
-                renderBoxes();
             }
+
+            updateInventoryUI();
+            renderBoxes();
 
             window.addEventListener('pointermove', onCropDragMove);
             window.addEventListener('pointerup', onCropDragEnd);
             window.addEventListener('pointercancel', onCropDragEnd);
         };
+
+        function handleXlsUpload(e) {
+            if (!e.target.files || e.target.files.length === 0) return;
+            const file = e.target.files[0];
+
+            if (!window.XLSX) {
+                document.getElementById('xls-file-info').innerText = 'Помилка: бібліотека Excel не завантажилася.';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = new Uint8Array(ev.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[firstSheetName];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+                    const parsed = parseSapInventoryRows(rows);
+                    if (parsed.length === 0) {
+                        document.getElementById('xls-file-info').innerText = 'У файлі не знайдено позицій із Заводським або Інв. № в SAP.';
+                        return;
+                    }
+
+                    xlsInventory = parsed;
+                    xlsFileName = file.name;
+
+                    localStorage.setItem('xls_inventory_sap_v2', JSON.stringify({
+                        items: xlsInventory,
+                        fileName: xlsFileName,
+                        rawRows: xlsRawRows,
+                        headerRowIndex: xlsHeaderRowIndex,
+                        nameCol: xlsNameCol,
+                        serialCol: xlsSerialCol,
+                        sapInvCol: xlsSapInvCol,
+                        groupCol: xlsGroupCol,
+                        dataEndRow: xlsDataEndRow
+                    }));
+
+                    updateInventoryUI();
+                    renderBoxes();
+                } catch (err) {
+                    document.getElementById('xls-file-info').innerText = `Помилка читання файлу: ${err.message || err}`;
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            e.target.value = '';
+        }
+
+        function parseSapInventoryRows(rows) {
+            if (!rows || rows.length === 0) return [];
+            xlsRawRows = rows;
+
+            let headerRowIdx = -1;
+            let nameCol = 1;
+            let serialCol = 4;
+            let sapInvCol = 6;
+            let groupCol = 17;
+
+            for (let r = 0; r < Math.min(30, rows.length); r++) {
+                const row = rows[r].map(c => String(c || '').replace(/\s+/g, ' ').trim().toLowerCase());
+                let fSerial = -1;
+                let fSap = -1;
+                let fName = -1;
+                let fGroup = -1;
+
+                row.forEach((cell, idx) => {
+                    if (!cell) return;
+                    if (fSerial === -1 && (cell.includes('заводськ') || cell.includes('серій') || cell === 'serial')) {
+                        fSerial = idx;
+                    }
+                    if (fSap === -1 && (cell.includes('інв.') && cell.includes('sap') || cell.includes('інв №') || cell.includes('інв. №'))) {
+                        fSap = idx;
+                    }
+                    if (fName === -1 && (cell.includes('назва') || cell.includes('найменування') || cell.includes('номенклатура'))) {
+                        fName = idx;
+                    }
+                    if (fGroup === -1 && cell.includes('група')) {
+                        fGroup = idx;
+                    }
+                });
+
+                if (fSerial !== -1 || fSap !== -1) {
+                    headerRowIdx = r;
+                    serialCol = fSerial;
+                    sapInvCol = fSap;
+                    nameCol = fName !== -1 ? fName : 1;
+                    groupCol = fGroup;
+                    break;
+                }
+            }
+
+            xlsHeaderRowIndex = headerRowIdx;
+            xlsNameCol = nameCol;
+            xlsSerialCol = serialCol;
+            xlsSapInvCol = sapInvCol;
+            xlsGroupCol = groupCol;
+
+            const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+            const result = [];
+            let endRow = rows.length - 1;
+
+            for (let r = startRow; r < rows.length; r++) {
+                const row = rows[r];
+                if (!row) continue;
+
+                const firstCell = String(row[0] ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const secondCell = String(row[1] ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+                if (
+                    secondCell === 'разом' ||
+                    firstCell.startsWith('загална кількість') ||
+                    firstCell.startsWith('голова комісії') ||
+                    firstCell.startsWith('всі цінності')
+                ) {
+                    endRow = r - 1;
+                    break;
+                }
+
+                const name = nameCol >= 0 ? String(row[nameCol] ?? '').replace(/\s+/g, ' ').trim() : '';
+                const serialNo = serialCol >= 0 ? String(row[serialCol] ?? '').trim() : '';
+                const sapInvNo = sapInvCol >= 0 ? String(row[sapInvCol] ?? '').trim() : '';
+                const groupName = groupCol >= 0 ? String(row[groupCol] ?? '').trim() : '';
+
+                if (!serialNo && !sapInvNo && !name) continue;
+                if (/^\d+$/.test(firstCell) && !serialNo && !sapInvNo && /^\d+$/.test(secondCell)) continue;
+
+                result.push({
+                    rowNum: result.length + 1,
+                    rawRowIndex: r,
+                    name,
+                    serialNo,
+                    sapInvNo,
+                    groupName
+                });
+            }
+
+            xlsDataEndRow = endRow;
+            return result;
+        }
+
+        function clearInventoryBase() {
+            xlsInventory = [];
+            xlsFileName = '';
+            xlsRawRows = [];
+            xlsHeaderRowIndex = -1;
+            xlsDataEndRow = -1;
+            currentListTab = 'scanned';
+            localStorage.removeItem('xls_inventory_sap_v2');
+            updateInventoryUI();
+            renderBoxes();
+        }
+
+        function matchXlsRecord(value) {
+            if (!xlsInventory || xlsInventory.length === 0) return null;
+            const target = String(value || '').trim().toLowerCase();
+            if (!target) return null;
+
+            for (const item of xlsInventory) {
+                if (item.serialNo && item.serialNo.toLowerCase() === target) {
+                    return { item, matchedBy: 'Заводський номер' };
+                }
+                if (item.sapInvNo && item.sapInvNo.toLowerCase() === target) {
+                    return { item, matchedBy: 'Інв. № в SAP' };
+                }
+            }
+            return null;
+        }
+
+        function getReconciliationSummary() {
+            const matchedItemIndexes = new Set();
+            const extraBoxes = [];
+
+            boxes.forEach(b => {
+                const found = matchXlsRecord(b.shk2) || matchXlsRecord(b.shk1);
+                if (found) {
+                    const idx = xlsInventory.indexOf(found.item);
+                    if (idx !== -1) matchedItemIndexes.add(idx);
+                } else {
+                    extraBoxes.push(b);
+                }
+            });
+
+            const missingItems = xlsInventory.filter((_, idx) => !matchedItemIndexes.has(idx));
+
+            return {
+                totalXls: xlsInventory.length,
+                matchedCount: matchedItemIndexes.size,
+                matchedItemIndexes,
+                missingItems,
+                extraBoxes,
+                extraCount: extraBoxes.length
+            };
+        }
+
+        function updateInventoryUI() {
+            const hasXls = xlsInventory.length > 0;
+            const infoEl = document.getElementById('xls-file-info');
+            const statsPanel = document.getElementById('inventory-stats-panel');
+            const clearBtn = document.getElementById('btn-clear-xls');
+            const listTabs = document.getElementById('list-tabs');
+
+            if (!hasXls) {
+                infoEl.innerText = 'Файл опису не завантажено (звірка вимкнена)';
+                statsPanel.classList.add('hidden');
+                clearBtn.classList.add('hidden');
+                listTabs.classList.add('hidden');
+                return;
+            }
+
+            const summary = getReconciliationSummary();
+            infoEl.innerText = `Файл: ${xlsFileName} (${summary.totalXls} поз.)`;
+            statsPanel.classList.remove('hidden');
+            clearBtn.classList.remove('hidden');
+            listTabs.classList.remove('hidden');
+
+            document.getElementById('stat-xls-total').innerText = summary.totalXls;
+            document.getElementById('stat-xls-matched').innerText = summary.matchedCount;
+            document.getElementById('stat-xls-missing').innerText = summary.missingItems.length;
+            document.getElementById('stat-xls-extra').innerText = summary.extraCount;
+
+            document.getElementById('tab-scanned-count').innerText = boxes.length;
+            document.getElementById('tab-missing-count').innerText = summary.missingItems.length;
+        }
+
+        function setListTab(tab) {
+            currentListTab = tab;
+            const scannedBtn = document.getElementById('tab-scanned');
+            const missingBtn = document.getElementById('tab-missing');
+
+            if (tab === 'scanned') {
+                scannedBtn.className = "py-1.5 px-2.5 rounded-lg bg-white text-indigo-700 shadow-sm transition";
+                missingBtn.className = "py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition";
+            } else {
+                missingBtn.className = "py-1.5 px-2.5 rounded-lg bg-white text-amber-700 shadow-sm transition";
+                scannedBtn.className = "py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition";
+            }
+            renderBoxes();
+        }
+
+        // Формує файл XLSX: помічає рядки, де знайдено серійний/інвентарний номер (нестача залишається непоміченою),
+        // а надлишок (відскановане, але не знайдене в описі) додає окремим аркушем "Надлишок" у тому ж файлі.
+        function exportReconciliationXlsx() {
+            if (xlsInventory.length === 0 && boxes.length === 0) return;
+
+            const summary = getReconciliationSummary();
+            const matchedByRawRow = new Map();
+
+            boxes.forEach(b => {
+                const found = matchXlsRecord(b.shk2) || matchXlsRecord(b.shk1);
+                if (found && found.item && typeof found.item.rawRowIndex === 'number') {
+                    if (!matchedByRawRow.has(found.item.rawRowIndex)) {
+                        matchedByRawRow.set(found.item.rawRowIndex, found.matchedBy);
+                    }
+                }
+            });
+
+            const wb = XLSX.utils.book_new();
+
+            if (xlsRawRows.length > 0) {
+                const maxCols = xlsRawRows.reduce((m, r) => Math.max(m, Array.isArray(r) ? r.length : 0), 0);
+                const markColIdx = Math.max(maxCols, 19);
+
+                const annotatedRows = xlsRawRows.map((row, idx) => {
+                    const newRow = Array.isArray(row) ? [...row] : [];
+                    while (newRow.length <= markColIdx) {
+                        newRow.push('');
+                    }
+
+                    if (idx === xlsHeaderRowIndex) {
+                        newRow[markColIdx] = 'Позначка звірки';
+                    } else if (matchedByRawRow.has(idx)) {
+                        newRow[markColIdx] = `ЗНАЙДЕНО (${matchedByRawRow.get(idx)})`;
+                    }
+                    return newRow;
+                });
+
+                const wsMain = XLSX.utils.aoa_to_sheet(annotatedRows);
+                XLSX.utils.book_append_sheet(wb, wsMain, "Опис (звірка)");
+            }
+
+            // Окремий список надлишку (те, що відсканувалося і не знайдено в описі)
+            const surplusRows = [
+                ["№ з/п", "Модель / Назва (ШК1)", "Заводський / Інв. № (ШК2)", "Час сканування"]
+            ];
+            summary.extraBoxes.forEach((b, idx) => {
+                surplusRows.push([
+                    idx + 1,
+                    b.shk1 || '—',
+                    b.shk2 || '—',
+                    b.time || '—'
+                ]);
+            });
+            const wsSurplus = XLSX.utils.aoa_to_sheet(surplusRows);
+            XLSX.utils.book_append_sheet(wb, wsSurplus, "Надлишок");
+
+            const baseName = xlsFileName ? xlsFileName.replace(/\.(xlsx|xls|csv)$/i, '') : 'inventory';
+            XLSX.writeFile(wb, `${baseName}_звірка_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
 
         function setPhotoStatus(msg, isError = false) {
             const el = document.getElementById('photo-scan-status');
@@ -872,7 +1265,7 @@
                 currentStep = 2;
                 document.getElementById('val-shk1').innerText = tempShk1;
                 document.getElementById('btn-undo-shk1').classList.remove('hidden');
-                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Серійний номер (ШК1 закріплено)";
+                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)";
                 document.getElementById('badge-shk1').innerText = "📌 ШК1 закріплено";
                 document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
             }
@@ -1312,7 +1705,7 @@
         }
 
         function findExistingSerial(serial) {
-            const target = serial.toLowerCase();
+            const target = serial.trim().toLowerCase();
             return boxes.find(b => (b.shk2 || '').trim().toLowerCase() === target) || null;
         }
 
@@ -1321,7 +1714,7 @@
             playWarningBeep();
             document.getElementById('val-shk2').innerText = `${serial} (ДУБЛІКАТ)`;
             document.getElementById('duplicate-details').innerHTML =
-                `Серійний номер <b class="font-mono">${serial}</b> уже є у списку (модель: <b>${existingBox.shk1}</b>, час: <b>${existingBox.time}</b>).`;
+                `Номер <b class="font-mono">${serial}</b> уже є у списку (модель/назва: <b>${existingBox.shk1}</b>, час: <b>${existingBox.time}</b>).`;
             document.getElementById('duplicate-alert').classList.remove('hidden');
         }
 
@@ -1345,14 +1738,32 @@
         function processScannedValue(value) {
             if (pendingDuplicateShk2) return;
 
+            const autoFillEl = document.getElementById('autofill-shk1-from-xls');
+            const canAutoFill = autoFillEl && autoFillEl.checked && xlsInventory.length > 0;
+
             if (currentStep === 1) {
+                if (canAutoFill) {
+                    const found = matchXlsRecord(value);
+                    if (found && found.item && found.item.name) {
+                        const existing = findExistingSerial(value);
+                        tempShk1 = found.item.name;
+                        document.getElementById('val-shk1').innerText = tempShk1;
+                        if (existing) {
+                            showDuplicateWarning(value, existing);
+                            return;
+                        }
+                        finalizeBox(value);
+                        return;
+                    }
+                }
+
                 tempShk1 = value;
                 document.getElementById('val-shk1').innerText = tempShk1;
                 document.getElementById('btn-undo-shk1').classList.remove('hidden');
                 currentStep = 2;
                 document.getElementById('step-indicator').innerText = pinShk1
-                    ? "Крок 2 з 2: Серійний номер (ШК1 закріплено)"
-                    : "Крок 2 з 2: Серійний номер";
+                    ? "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)"
+                    : "Крок 2 з 2: Заводський / Інв. №";
                 document.getElementById('badge-shk1').innerText = pinShk1 ? "📌 ШК1 закріплено" : "Очікування ШК2";
                 document.getElementById('badge-shk1').className = pinShk1
                     ? "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium"
@@ -1381,6 +1792,7 @@
 
         function saveAndReset() {
             localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
+            updateInventoryUI();
             renderBoxes();
 
             document.getElementById('val-shk2').innerText = 'очікується...';
@@ -1389,7 +1801,7 @@
                 currentStep = 2;
                 document.getElementById('val-shk1').innerText = tempShk1;
                 document.getElementById('btn-undo-shk1').classList.remove('hidden');
-                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Серійний номер (ШК1 закріплено)";
+                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)";
                 document.getElementById('badge-shk1').innerText = "📌 ШК1 закріплено";
                 document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
             } else {
@@ -1415,9 +1827,38 @@
             saveAndReset();
         }
 
+        function getXlsBadgeHtml(box) {
+            if (!xlsInventory || xlsInventory.length === 0) return '';
+            const found = matchXlsRecord(box.shk2) || matchXlsRecord(box.shk1);
+            if (!found) {
+                return `<span class="inline-block text-[11px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">🟣 Надлишок (немає в описі)</span>`;
+            }
+            return `<span class="inline-block text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-medium">✅ Знайдено (${found.matchedBy})</span>`;
+        }
+
         function renderBoxes() {
             const container = document.getElementById('boxes-list');
             document.getElementById('box-count').innerText = boxes.length;
+
+            if (xlsInventory.length > 0 && currentListTab === 'missing') {
+                const summary = getReconciliationSummary();
+                if (summary.missingItems.length === 0) {
+                    container.innerHTML = `<div class="text-center text-emerald-600 py-8 text-sm font-medium">🎉 Усі позиції з опису знайдено!</div>`;
+                    return;
+                }
+                container.innerHTML = summary.missingItems.map(item => `
+                    <div class="bg-amber-50/70 border border-amber-200 p-3 rounded-lg flex justify-between items-start gap-2 text-sm">
+                        <div class="space-y-0.5">
+                            <div class="text-[11px] text-amber-700 font-medium">Опис #${item.rowNum}${item.groupName ? ` · ${item.groupName}` : ''}</div>
+                            <div><b>Назва:</b> <span class="text-slate-800">${item.name || 'не вказано'}</span></div>
+                            <div class="text-xs"><b>Заводський №:</b> <span class="font-mono text-amber-900 font-semibold">${item.serialNo || '—'}</span></div>
+                            <div class="text-xs"><b>Інв. № в SAP:</b> <span class="font-mono text-indigo-900 font-semibold">${item.sapInvNo || '—'}</span></div>
+                        </div>
+                        <span class="text-xs bg-amber-200/80 text-amber-900 px-2 py-1 rounded font-medium shrink-0">Нестача</span>
+                    </div>
+                `).join('');
+                return;
+            }
 
             if (boxes.length === 0) {
                 container.innerHTML = `<div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>`;
@@ -1426,10 +1867,13 @@
 
             container.innerHTML = boxes.map((box, index) => `
                 <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm">
-                    <div>
-                        <div class="text-xs text-slate-400 mb-0.5">${box.time}</div>
+                    <div class="space-y-0.5">
+                        <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-400 mb-0.5">
+                            <span>${box.time}</span>
+                            ${getXlsBadgeHtml(box)}
+                        </div>
                         <div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>
-                        <div><b>Серійний (ШК2):</b> <span class="text-emerald-700">${box.shk2}</span></div>
+                        <div><b>Заводський / Інв. № (ШК2):</b> <span class="text-emerald-700 font-mono">${box.shk2}</span></div>
                     </div>
                     <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
                         ✕
@@ -1441,6 +1885,7 @@
         function deleteBox(index) {
             boxes.splice(index, 1);
             localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
+            updateInventoryUI();
             renderBoxes();
         }
 
@@ -1448,6 +1893,7 @@
             if (confirm("Видалити всі збережені коробки?")) {
                 boxes = [];
                 localStorage.removeItem('scanned_boxes');
+                updateInventoryUI();
                 renderBoxes();
             }
         }
@@ -1459,7 +1905,7 @@
             }
 
             const lines = [
-                "ШК1 (Модель/Назва)\tШК2 (Серійний номер)\tЧас",
+                "ШК1 (Модель/Назва)\tШК2 (Заводський / Інв. №)\tЧас",
                 ...boxes.map(b => `${b.shk1}\t${b.shk2}\t${b.time}`)
             ];
             const text = lines.join("\n");
@@ -1504,7 +1950,7 @@
                 return;
             }
 
-            let csvContent = "\uFEFFШК1 (Модель/Назва),ШК2 (Серійний номер),Час\n" + 
+            let csvContent = "\uFEFFШК1 (Модель/Назва),ШК2 (Заводський / Інв. №),Час\n" + 
                 boxes.map(b => `"${b.shk1}","${b.shk2}","${b.time}"`).join("\n");
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
