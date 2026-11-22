@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-22 14:27)</title>
+    <title>Сканер коробок (v2026-11-22 14:56)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 14:27
+                Версія: 2026-11-22 14:56
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -77,7 +77,7 @@
                         </button>
                     </div>
                 </div>
-                <p class="text-[11px] text-slate-300">Перетягніть рамку на потрібний штрихкод або текст і підлаштуйте розмір. Використовується повна чіткість знімка.</p>
+                <p class="text-[11px] text-slate-300">Помістіть штрихкод або текст повністю всередину рамки (без обрізання країв).</p>
 
                 <div id="photo-stage" class="relative w-full h-80 overflow-hidden rounded-lg bg-black flex items-center justify-center select-none touch-none">
                     <div id="photo-rotator" class="w-full h-full flex items-center justify-center transition-transform duration-150">
@@ -85,13 +85,15 @@
                     </div>
                     <div id="photo-crop-box"
                          onpointerdown="startCropDrag(event)"
-                         style="left: 15%; top: 32.5%; width: 70%; height: 35%;"
+                         style="left: 12%; top: 27.5%; width: 76%; height: 45%;"
                          class="absolute border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] cursor-move rounded">
                         <span class="absolute -top-5 left-0 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
                             ВИБРАНА ЗОНА
                         </span>
                     </div>
                 </div>
+
+                <div id="photo-scan-status" class="hidden text-xs bg-amber-950/80 border border-amber-500/60 text-amber-200 rounded-lg px-3 py-2"></div>
 
                 <label class="flex items-center justify-between bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-2 cursor-pointer select-none text-xs">
                     <span>⚡ Підсилити контраст (для відблисків / тьмяного тексту)</span>
@@ -100,12 +102,12 @@
 
                 <div class="grid grid-cols-2 gap-3 text-xs text-slate-300">
                     <label class="space-y-1">
-                        <div class="flex justify-between"><span>Ширина зони:</span> <span id="crop-w-val" class="font-mono text-emerald-300">70%</span></div>
-                        <input type="range" id="crop-w-slider" min="15" max="95" value="70" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
+                        <div class="flex justify-between"><span>Ширина зони:</span> <span id="crop-w-val" class="font-mono text-emerald-300">76%</span></div>
+                        <input type="range" id="crop-w-slider" min="15" max="96" value="76" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
                     </label>
                     <label class="space-y-1">
-                        <div class="flex justify-between"><span>Висота зони:</span> <span id="crop-h-val" class="font-mono text-emerald-300">35%</span></div>
-                        <input type="range" id="crop-h-slider" min="12" max="90" value="35" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
+                        <div class="flex justify-between"><span>Висота зони:</span> <span id="crop-h-val" class="font-mono text-emerald-300">45%</span></div>
+                        <input type="range" id="crop-h-slider" min="12" max="92" value="45" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
                     </label>
                 </div>
 
@@ -323,7 +325,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 14:27";
+        const APP_VERSION = "2026-11-22 14:56";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -350,7 +352,7 @@
         let boxes = [];
         let torchOn = false;
 
-        let cropState = { leftPct: 15, topPct: 32.5, widthPct: 70, heightPct: 35 };
+        let cropState = { leftPct: 12, topPct: 27.5, widthPct: 76, heightPct: 45 };
         let photoRotationDeg = 0;
         let dragState = null;
         let focusIndicatorTimeout = null;
@@ -463,6 +465,20 @@
             window.addEventListener('pointerup', onCropDragEnd);
             window.addEventListener('pointercancel', onCropDragEnd);
         };
+
+        function setPhotoStatus(msg, isError = false) {
+            const el = document.getElementById('photo-scan-status');
+            if (!msg) {
+                el.classList.add('hidden');
+                el.innerText = '';
+                return;
+            }
+            el.innerText = msg;
+            el.className = isError
+                ? 'text-xs bg-rose-950/85 border border-rose-500/70 text-rose-200 rounded-lg px-3 py-2'
+                : 'text-xs bg-amber-950/80 border border-amber-500/60 text-amber-200 rounded-lg px-3 py-2';
+            el.classList.remove('hidden');
+        }
 
         async function pasteIntoHighlight() {
             try {
@@ -584,6 +600,7 @@
 
         function rotatePhoto90() {
             photoRotationDeg = (photoRotationDeg + 90) % 360;
+            setPhotoStatus('');
             applyPhotoRotation();
         }
 
@@ -608,12 +625,12 @@
         }
 
         function resetCropBox() {
-            cropState.widthPct = 70;
-            cropState.heightPct = 35;
-            cropState.leftPct = 15;
-            cropState.topPct = 32.5;
-            document.getElementById('crop-w-slider').value = 70;
-            document.getElementById('crop-h-slider').value = 35;
+            cropState.widthPct = 76;
+            cropState.heightPct = 45;
+            cropState.leftPct = 12;
+            cropState.topPct = 27.5;
+            document.getElementById('crop-w-slider').value = 76;
+            document.getElementById('crop-h-slider').value = 45;
             applyCropBoxStyles();
         }
 
@@ -654,6 +671,7 @@
                 const img = document.getElementById('photo-preview-img');
                 img.onload = function() {
                     photoRotationDeg = 0;
+                    setPhotoStatus('');
                     resetCropBox();
                     document.getElementById('photo-crop-modal').classList.remove('hidden');
                     applyPhotoRotation();
@@ -668,6 +686,7 @@
         function closePhotoCropModal() {
             dragState = null;
             photoRotationDeg = 0;
+            setPhotoStatus('');
             document.getElementById('photo-crop-modal').classList.add('hidden');
             document.getElementById('photo-preview-img').src = '';
             document.getElementById('photo-rotator').style.transform = 'rotate(0deg)';
@@ -715,6 +734,7 @@
             const boostContrast = document.getElementById('photo-boost-contrast').checked;
             if (!img.src || !img.naturalWidth || !img.naturalHeight) return;
 
+            setPhotoStatus('');
             const rotCanvas = buildRotatedPhotoCanvas(img);
             const rotW = rotCanvas.width;
             const rotH = rotCanvas.height;
@@ -749,7 +769,6 @@
             const sw = Math.max(1, Math.floor(relWidth * rotW));
             const sh = Math.max(1, Math.floor(relHeight * rotH));
 
-            // Зберігаємо високу чіткість для фото з галереї (до 3200 px по більшій стороні)
             const canvas = document.getElementById('scan-canvas');
             const scale = Math.min(1, 3200 / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
@@ -769,7 +788,15 @@
 
             try {
                 if (inputType === 'both') {
-                    const decoded = await decodeBarcodeSmart(canvas);
+                    let decoded = await decodeBarcodeSmart(canvas);
+                    if (!decoded && !boostContrast) {
+                        const altCanvas = document.createElement('canvas');
+                        altCanvas.width = canvas.width;
+                        altCanvas.height = canvas.height;
+                        altCanvas.getContext('2d').drawImage(canvas, 0, 0);
+                        applyHighContrastToCanvas(altCanvas);
+                        decoded = await decodeBarcodeSmart(altCanvas);
+                    }
                     if (decoded && decoded.trim()) {
                         closePhotoCropModal();
                         handleDetectedCode(decoded, 'Штрихкод з фото (HD)');
@@ -786,7 +813,7 @@
                     }
                 }
 
-                alert("У вибраній області нічого не розпізнано. Спробуйте увімкнути «Підсилити контраст», повернути фото або змінити мову OCR.");
+                setPhotoStatus('У вибраній рамці нічого не розпізнано. Переконайтесь, що штрихкод або текст помістився повністю, або увімкніть «Підсилити контраст».', true);
             } finally {
                 btn.disabled = false;
                 btn.innerText = origLabel;
@@ -961,10 +988,10 @@
 
                     await startStream(preferredId);
                 } else {
-                    alert("Камери не знайдено.");
+                    document.getElementById('confirm-status').innerText = 'Камери не знайдено. Перевірте дозволи браузера.';
                 }
             } catch (err) {
-                alert("Не вдалося запустити камеру. Перевірте дозволи Safari/Chrome.");
+                document.getElementById('confirm-status').innerText = 'Не вдалося запустити камеру. Перевірте дозволи.';
             }
         }
 
@@ -1427,7 +1454,7 @@
 
         async function copyAllToClipboard() {
             if (boxes.length === 0) {
-                alert("Список порожній!");
+                document.getElementById('confirm-status').innerText = 'Список порожній — нічого копіювати';
                 return;
             }
 
@@ -1473,7 +1500,7 @@
 
         function exportToCSV() {
             if (boxes.length === 0) {
-                alert("Список порожній!");
+                document.getElementById('confirm-status').innerText = 'Список порожній — немає даних для CSV';
                 return;
             }
 
