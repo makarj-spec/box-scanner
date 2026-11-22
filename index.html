@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 15:55)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 16:08)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +19,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 15:55
+                Версія: 2026-11-22 16:08
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -346,14 +346,20 @@
                     </button>
                 </div>
 
-                <!-- Перемикач типу зчитування: ШК+Текст / Лише Текст (OCR) -->
-                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                    <button id="input-type-both" onclick="setInputType('both')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                        🔍 Код або Текст
-                    </button>
-                    <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                        🔤 Лише Текст (OCR)
-                    </button>
+                <!-- Перемикач типу зчитування: Код або Текст / Лише ШК або QR / Лише Текст (OCR) -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати:</div>
+                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="input-type-both" onclick="setInputType('both')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            🔍 Код або Текст
+                        </button>
+                        <button id="input-type-barcode" onclick="setInputType('barcode')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            📊 Лише ШК або QR
+                        </button>
+                        <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔤 Лише Текст
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
@@ -387,7 +393,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 15:55";
+        const APP_VERSION = "2026-11-22 16:08";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -401,7 +407,7 @@
         let currentStream = null;
         let osProfile = 'android';
         let scanMode = 'manual';
-        let inputType = 'both';
+        let inputType = 'both'; // 'both' | 'barcode' | 'ocr'
         let ocrLang = 'ukr+eng';
         let pinShk1 = false;
         let isEditingHighlight = false;
@@ -414,7 +420,6 @@
         let boxes = [];
         let torchOn = false;
 
-        // Зберігаємо сирі рядки та заголовки завантаженого опису, щоб помітити знайдені рядки і додати аркуш "Надлишок"
         let xlsRawRows = [];
         let xlsHeaderRowIndex = -1;
         let xlsNameCol = 1;
@@ -511,7 +516,11 @@
             setScanMode(savedMode === 'auto' ? 'auto' : 'manual');
 
             const savedInputType = localStorage.getItem('scan_input_type');
-            setInputType(savedInputType === 'ocr' ? 'ocr' : 'both');
+            if (savedInputType === 'barcode' || savedInputType === 'ocr' || savedInputType === 'both') {
+                setInputType(savedInputType);
+            } else {
+                setInputType('both');
+            }
 
             const savedLang = localStorage.getItem('scan_ocr_lang');
             if (savedLang === 'eng' || savedLang === 'ukr' || savedLang === 'ukr+eng') {
@@ -799,8 +808,6 @@
             renderBoxes();
         }
 
-        // Формує файл XLSX: помічає рядки, де знайдено серійний/інвентарний номер (нестача залишається непоміченою),
-        // а надлишок (відскановане, але не знайдене в описі) додає окремим аркушем "Надлишок" у тому ж файлі.
         function exportReconciliationXlsx() {
             if (xlsInventory.length === 0 && boxes.length === 0) return;
 
@@ -840,7 +847,6 @@
                 XLSX.utils.book_append_sheet(wb, wsMain, "Опис (звірка)");
             }
 
-            // Окремий список надлишку (те, що відсканувалося і не знайдено в описі)
             const surplusRows = [
                 ["№ з/п", "Модель / Назва (ШК1)", "Заводський / Інв. № (ШК2)", "Час сканування"]
             ];
@@ -1180,7 +1186,7 @@
             btn.innerText = '⏳ Сканування...';
 
             try {
-                if (inputType === 'both') {
+                if (inputType === 'both' || inputType === 'barcode') {
                     let decoded = await decodeBarcodeSmart(canvas);
                     if (!decoded && !boostContrast) {
                         const altCanvas = document.createElement('canvas');
@@ -1192,12 +1198,12 @@
                     }
                     if (decoded && decoded.trim()) {
                         closePhotoCropModal();
-                        handleDetectedCode(decoded, 'Штрихкод з фото (HD)');
+                        handleDetectedCode(decoded, 'ШК або QR з фото (HD)');
                         return;
                     }
                 }
 
-                if (currentStep === 1) {
+                if (inputType !== 'barcode' && currentStep === 1) {
                     const text = await recognizeTextFromCanvas(canvas);
                     if (text && text.trim()) {
                         closePhotoCropModal();
@@ -1206,7 +1212,12 @@
                     }
                 }
 
-                setPhotoStatus('У вибраній рамці нічого не розпізнано. Переконайтесь, що штрихкод або текст помістився повністю, або увімкніть «Підсилити контраст».', true);
+                setPhotoStatus(
+                    inputType === 'barcode'
+                        ? 'Штрихкод або QR у вибраній рамці не розпізнано. Переконайтесь, що код помістився повністю, або увімкніть «Підсилити контраст».'
+                        : 'У вибраній рамці нічого не розпізнано. Переконайтесь, що код або текст помістився повністю, або увімкніть «Підсилити контраст».',
+                    true
+                );
             } finally {
                 btn.disabled = false;
                 btn.innerText = origLabel;
@@ -1296,14 +1307,22 @@
             localStorage.setItem('scan_input_type', type);
 
             const bothBtn = document.getElementById('input-type-both');
+            const barcodeBtn = document.getElementById('input-type-barcode');
             const ocrBtn = document.getElementById('input-type-ocr');
 
-            if (type === 'both') {
-                bothBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-                ocrBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
-            } else {
-                ocrBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-amber-700 shadow-sm";
-                bothBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
+            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+
+            bothBtn.className = type === 'both'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm"
+                : inactiveClass;
+            barcodeBtn.className = type === 'barcode'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm"
+                : inactiveClass;
+            ocrBtn.className = type === 'ocr'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-amber-700 shadow-sm"
+                : inactiveClass;
+
+            if (type === 'ocr') {
                 getOcrWorker().catch(() => {});
             }
         }
@@ -1570,19 +1589,30 @@
                     const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
                     if (captured) {
-                        let decodedBarcode = null;
-                        if (inputType === 'both') {
-                            decodedBarcode = await decodeBarcodeSmart(canvas);
-                        }
-
-                        if (decodedBarcode && decodedBarcode.trim()) {
-                            handleDetectedCode(decodedBarcode, 'Штрихкод у рамці');
-                        } else if (currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                        if (inputType === 'barcode' || inputType === 'both') {
+                            const decodedBarcode = await decodeBarcodeSmart(canvas);
+                            if (decodedBarcode && decodedBarcode.trim()) {
+                                handleDetectedCode(decodedBarcode, 'ШК або QR у рамці');
+                            } else if (inputType === 'both' && currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                                isOcrBusy = true;
+                                lastOcrTime = Date.now();
+                                recognizeTextFromCanvas(canvas)
+                                    .then(text => {
+                                        if (text && isScanning && currentStep === 1 && inputType === 'both') {
+                                            handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                                        }
+                                    })
+                                    .catch(() => {})
+                                    .finally(() => {
+                                        isOcrBusy = false;
+                                    });
+                            }
+                        } else if (inputType === 'ocr' && currentStep === 1 && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
                             isOcrBusy = true;
                             lastOcrTime = Date.now();
                             recognizeTextFromCanvas(canvas)
                                 .then(text => {
-                                    if (text && isScanning && currentStep === 1) {
+                                    if (text && isScanning && currentStep === 1 && inputType === 'ocr') {
                                         handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
                                     }
                                 })
