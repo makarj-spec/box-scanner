@@ -2,24 +2,22 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 17:00)</title>
+    <title>Сканер коробок (Smooth Android v2026-11-22 18:20)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col select-none">
 
-    <header class="bg-indigo-600 text-white shadow-md p-4 text-center">
-        <h1 class="text-2xl font-bold">📦 Сканер коробок</h1>
-        <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
+    <header class="bg-indigo-600 text-white shadow-md p-3.5 text-center">
+        <h1 class="text-xl font-bold">📦 Сканер коробок</h1>
+        <p class="text-xs text-indigo-200 mt-0.5">ШК1 → Назва/Модель · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 17:00
+                Версія: 2026-11-22 18:20
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -27,355 +25,166 @@
         </div>
     </header>
 
-    <main class="flex-grow container mx-auto p-4 max-w-xl space-y-5">
+    <main class="flex-grow container mx-auto p-3.5 max-w-xl space-y-4">
 
-        <!-- Блок інвентаризації та звірки з XLS (Заводський номер + Інв. № в SAP) -->
-        <div class="bg-white rounded-xl shadow-md p-4 space-y-3 border border-indigo-100">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <h2 class="font-bold text-sm text-slate-800">📊 Інвентаризація (Заводський № та Інв. № SAP)</h2>
-                    <p id="xls-file-info" class="text-[11px] text-slate-500">Файл опису не завантажено</p>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <button onclick="document.getElementById('xls-input').click()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
-                        📂 Завантажити XLS
-                    </button>
-                    <button id="btn-clear-xls" onclick="clearInventoryBase()" class="hidden text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-2.5 py-1.5 rounded-lg font-medium transition" title="Очистити базу XLS">
-                        ✕
-                    </button>
-                    <input type="file" id="xls-input" accept=".xls,.xlsx,.csv" class="hidden" onchange="handleXlsUpload(event)">
-                </div>
+        <!-- Основна картка сканування -->
+        <div class="bg-white rounded-xl shadow-md p-4 space-y-3.5">
+            <div class="flex justify-between items-center border-b pb-2.5">
+                <span id="step-indicator" class="font-semibold text-indigo-600 text-sm sm:text-base">Крок 1 з 2: Назва / Модель</span>
+                <span id="badge-step" class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">Очікування ШК1</span>
             </div>
 
-            <!-- Статистика звірки -->
-            <div id="inventory-stats-panel" class="hidden space-y-2.5 pt-2 border-t border-slate-100">
-                <div class="grid grid-cols-4 gap-1.5 text-center text-xs">
-                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-2">
-                        <div class="text-[10px] text-slate-500 uppercase">В описі</div>
-                        <div id="stat-xls-total" class="font-bold text-sm text-slate-800">0</div>
-                    </div>
-                    <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
-                        <div class="text-[10px] text-emerald-700 uppercase">Знайдено</div>
-                        <div id="stat-xls-matched" class="font-bold text-sm text-emerald-700">0</div>
-                    </div>
-                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-2">
-                        <div class="text-[10px] text-amber-700 uppercase">Нестача</div>
-                        <div id="stat-xls-missing" class="font-bold text-sm text-amber-700">0</div>
-                    </div>
-                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-2">
-                        <div class="text-[10px] text-purple-700 uppercase">Надлишок</div>
-                        <div id="stat-xls-extra" class="font-bold text-sm text-purple-700">0</div>
-                    </div>
-                </div>
-
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <label class="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
-                        <input type="checkbox" id="autofill-shk1-from-xls" checked class="w-3.5 h-3.5 accent-indigo-600 rounded">
-                        <span>Підставляти назву з опису по Заводському / Інв. №</span>
-                    </label>
-                    <button onclick="exportReconciliationXlsx()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-medium transition">
-                        📥 Зберегти файл звірки XLSX
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Основна робоча картка сканера -->
-        <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
-            <div class="flex justify-between items-center border-b pb-3">
-                <span id="step-indicator" class="font-semibold text-indigo-600 text-base">Крок 1 з 2: Назва / Модель</span>
-                <span id="badge-shk1" class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">Очікування ШК1</span>
-            </div>
-
-            <!-- Швидкий перемикач закріплення ШК1 вверху -->
-            <label id="pin-shk1-wrapper" class="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
-                <div class="pr-2">
-                    <div class="text-xs font-bold text-indigo-950">📌 Закріпити ШК1 для партії</div>
-                    <div class="text-[11px] text-indigo-700">Не скидати модель/назву після збереження коробки</div>
-                </div>
-                <input type="checkbox" id="pin-shk1-toggle" onchange="togglePinShk1(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
-            </label>
-
-            <!-- Модальне вікно вибору області на фото з галереї -->
-            <div id="photo-crop-modal" class="hidden bg-slate-900 text-white rounded-xl p-4 space-y-3 border-2 border-indigo-400">
-                <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs font-bold uppercase tracking-wide text-indigo-300">✂️ Виберіть область на фото</span>
-                    <div class="flex items-center gap-1.5">
-                        <span id="photo-rotation-label" class="text-[11px] font-mono bg-slate-800 text-indigo-200 px-2 py-0.5 rounded">0°</span>
-                        <button onclick="rotatePhoto90()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded font-medium transition">
-                            ↻ Повернути 90°
-                        </button>
-                        <button onclick="closePhotoCropModal()" class="text-xs text-slate-300 hover:text-white px-2 py-1 rounded bg-slate-800">
-                            ✕
-                        </button>
-                    </div>
-                </div>
-                <p class="text-[11px] text-slate-300">Помістіть штрихкод або текст повністю всередину рамки (без обрізання країв).</p>
-
-                <div id="photo-stage" class="relative w-full h-80 overflow-hidden rounded-lg bg-black flex items-center justify-center select-none touch-none">
-                    <div id="photo-rotator" class="w-full h-full flex items-center justify-center transition-transform duration-150">
-                        <img id="photo-preview-img" src="" alt="Фото для розпізнавання" class="max-w-full max-h-full object-contain block pointer-events-none">
-                    </div>
-                    <div id="photo-crop-box"
-                         onpointerdown="startCropDrag(event)"
-                         style="left: 12%; top: 27.5%; width: 76%; height: 45%;"
-                         class="absolute border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] cursor-move rounded">
-                        <span class="absolute -top-5 left-0 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
-                            ВИБРАНА ЗОНА
-                        </span>
-                    </div>
-                </div>
-
-                <div id="photo-scan-status" class="hidden text-xs bg-amber-950/80 border border-amber-500/60 text-amber-200 rounded-lg px-3 py-2"></div>
-
-                <label class="flex items-center justify-between bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-2 cursor-pointer select-none text-xs">
-                    <span>⚡ Підсилити контраст (для відблисків / тьмяного тексту)</span>
-                    <input type="checkbox" id="photo-boost-contrast" class="w-4 h-4 accent-emerald-400 rounded">
-                </label>
-
-                <div class="grid grid-cols-2 gap-3 text-xs text-slate-300">
-                    <label class="space-y-1">
-                        <div class="flex justify-between"><span>Ширина зони:</span> <span id="crop-w-val" class="font-mono text-emerald-300">76%</span></div>
-                        <input type="range" id="crop-w-slider" min="15" max="96" value="76" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
-                    </label>
-                    <label class="space-y-1">
-                        <div class="flex justify-between"><span>Висота зони:</span> <span id="crop-h-val" class="font-mono text-emerald-300">45%</span></div>
-                        <input type="range" id="crop-h-slider" min="12" max="92" value="45" oninput="updateCropBoxSize()" class="w-full accent-emerald-400">
-                    </label>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button id="btn-scan-cropped-photo" onclick="scanCroppedPhoto()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-3 rounded-lg transition text-xs">
-                        🔍 Розпізнати вибране
-                    </button>
-                    <button onclick="resetCropBox()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-2.5 px-3 rounded-lg transition text-xs">
-                        ↺ По центру
-                    </button>
-                </div>
-            </div>
-
-            <!-- Вікно камери з підтримкою фокусування та переміщення зони дотиком -->
-            <div id="reader-container"
-                 onpointerdown="handleVideoTapFocus(event)"
-                 class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center touch-none select-none cursor-crosshair">
+            <!-- Вікно камери з підтримкою фокусування/переміщення зони дотиком -->
+            <div id="reader-container" onclick="handleVideoTap(event)" class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center touch-manipulation">
                 <video id="video" playsinline muted autoplay class="w-full h-full object-cover"></video>
                 <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center bg-slate-900">
-                    <svg class="w-12 h-12 mb-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-11 h-11 mb-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
                     </svg>
                     <span class="text-sm">Натисніть «Увімкнути камеру»</span>
                 </div>
-                <div id="aim-box" style="width: 84%; height: 48%; left: 50%; top: 50%;" class="hidden pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-[border-color,width,height] duration-150">
-                    <span class="absolute -top-5 left-1 bg-black/75 text-amber-200 text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
-                        ЗОНА СКАНУВАННЯ · ДОТИК = ФОКУС
+
+                <!-- Зона сканування -->
+                <div id="aim-box" class="hidden pointer-events-none absolute w-[76%] h-[38%] left-[12%] top-[31%] border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.35)] transition-colors duration-150">
+                    <span class="absolute -top-5 left-1 text-[10px] font-semibold uppercase tracking-wider text-amber-200 bg-black/60 px-1.5 py-0.5 rounded">
+                        Зона сканування
                     </span>
                 </div>
-                <div id="focus-reticle" class="hidden pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-2 border-amber-300 ring-2 ring-amber-300/30 animate-ping"></div>
+
+                <!-- Кільце фокусу при дотику -->
+                <div id="focus-ring" class="hidden pointer-events-none absolute w-14 h-14 -ml-7 -mt-7 rounded-full border-2 border-sky-400 bg-sky-400/10 transition-transform duration-150"></div>
+
+                <!-- Плашка розпізнаного коду -->
                 <div id="detected-pill" class="hidden pointer-events-none absolute bottom-2.5 inset-x-2.5 bg-emerald-600/95 text-white text-center py-1.5 px-3 rounded-lg text-xs font-mono font-bold shadow">
-                    Виділено: <span id="detected-pill-text"></span>
+                    Знайдено: <span id="detected-pill-text"></span>
                 </div>
             </div>
 
-            <!-- Регулювання розміру рамки камери -->
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-600 uppercase">
-                    <span>📐 Розмір зони сканування</span>
-                    <button onclick="resetAimBoxSize()" class="text-indigo-600 hover:underline normal-case font-medium">Скинути</button>
-                </div>
-                <div class="grid grid-cols-2 gap-3 text-xs text-slate-600">
-                    <label class="space-y-1">
-                        <div class="flex justify-between"><span>Ширина:</span> <span id="aim-w-val" class="font-mono font-semibold">84%</span></div>
-                        <input type="range" id="aim-w-slider" min="35" max="96" value="84" oninput="updateAimBoxSize()" class="w-full accent-indigo-600">
-                    </label>
-                    <label class="space-y-1">
-                        <div class="flex justify-between"><span>Висота:</span> <span id="aim-h-val" class="font-mono font-semibold">48%</span></div>
-                        <input type="range" id="aim-h-slider" min="16" max="88" value="48" oninput="updateAimBoxSize()" class="w-full accent-indigo-600">
-                    </label>
-                </div>
-            </div>
-
-            <!-- Блок ручного підтвердження та редагування виділеного значення -->
-            <div id="manual-confirm-box" class="bg-amber-50 border border-amber-300 rounded-xl p-3.5 space-y-2.5">
+            <!-- Блок ручного підтвердження -->
+            <div id="manual-confirm-box" class="bg-amber-50 border border-amber-300 rounded-xl p-3 space-y-2">
                 <div class="flex items-center justify-between text-xs gap-2">
-                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код / текст</span>
-                    <button onclick="pasteIntoHighlight()" class="text-[11px] bg-amber-200/80 hover:bg-amber-300/80 text-amber-950 px-2 py-0.5 rounded font-semibold transition">
-                        📋 Вставити з буфера
-                    </button>
+                    <span class="font-semibold text-amber-900 uppercase tracking-wide">Виділений код</span>
+                    <span id="confirm-status" class="text-amber-700 truncate">Наведіть на код у рамці</span>
                 </div>
-                <div id="confirm-status" class="text-xs text-amber-700">Помістіть код або назву в рамку чи вставте скопійоване</div>
-                <input
-                    type="text"
-                    id="highlighted-code"
-                    placeholder="Очікування розпізнавання або вставки..."
-                    oninput="handleHighlightEdit(this.value)"
-                    onfocus="isEditingHighlight = true"
-                    onblur="isEditingHighlight = false"
-                    class="w-full font-mono text-base font-bold text-slate-900 bg-white border border-amber-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
+                <div id="highlighted-code" class="font-mono text-sm sm:text-base font-bold text-slate-900 bg-white border border-amber-200 rounded-lg px-3 py-2 break-all min-h-[2.4rem] flex items-center">
+                    —
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <button id="btn-confirm-code" onclick="confirmHighlightedCode()" disabled class="bg-emerald-600 disabled:bg-slate-300 disabled:text-slate-500 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg transition text-sm">
                         ✅ Зафіксувати
                     </button>
                     <button id="btn-clear-highlight" onclick="clearHighlightedCode()" disabled class="bg-slate-200 disabled:opacity-50 hover:bg-slate-300 text-slate-700 font-medium py-2 px-3 rounded-lg transition text-sm">
-                        ↺ Скинути виділення
+                        ↺ Скинути
                     </button>
                 </div>
             </div>
 
+            <!-- Кнопки керування камерою та фото -->
             <div class="grid grid-cols-2 gap-2">
-                <button id="btn-start-camera" onclick="initAndStartScanner()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                <button id="btn-start-camera" onclick="initAndStartScanner()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-3 rounded-lg transition text-sm flex items-center justify-center gap-1.5">
                     📷 Увімкнути камеру
                 </button>
-                <button id="btn-stop-camera" onclick="stopScanner()" class="bg-rose-500 hover:bg-rose-600 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm hidden">
+                <button id="btn-stop-camera" onclick="stopScanner()" class="bg-rose-500 hover:bg-rose-600 text-white font-medium py-2.5 px-3 rounded-lg transition text-sm hidden">
                     ⏹ Вимкнути камеру
                 </button>
-                <button onclick="document.getElementById('file-input').click()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2.5 px-4 rounded-lg transition text-sm flex items-center justify-center gap-2">
+                <button onclick="document.getElementById('file-input').click()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium py-2.5 px-3 rounded-lg transition text-sm flex items-center justify-center gap-1.5">
                     🖼 З фото / галереї
                 </button>
-                <button id="btn-torch" onclick="toggleTorch()" class="bg-amber-100 hover:bg-amber-200 text-amber-900 font-medium py-2.5 px-4 rounded-lg transition text-sm hidden">
+                <button id="btn-torch" onclick="toggleTorch()" class="col-span-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-medium py-2 px-3 rounded-lg transition text-sm hidden">
                     🔦 Ліхтарик
                 </button>
-                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="openPhotoCropper(event)">
+                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="scanFromFile(event)">
             </div>
 
             <!-- Ручне введення -->
-            <div class="pt-2 border-t space-y-2">
-                <label class="block text-xs font-semibold text-slate-500 uppercase">Або ввести значення вручну:</label>
+            <div class="pt-2 border-t space-y-1.5">
+                <label class="block text-xs font-semibold text-slate-500 uppercase">Або ввести вручну:</label>
                 <div class="flex gap-2">
-                    <input type="text" id="manual-input" placeholder="Введіть серійний номер або назву..." class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="manual-input" onkeydown="if(event.key==='Enter') handleManualSubmit()" placeholder="Введіть значення..." class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <button onclick="handleManualSubmit()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">ОК</button>
                 </div>
             </div>
 
-            <!-- Поточний буфер + скасування ШК1 -->
-            <div id="current-buffer" class="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-2 text-slate-600">
-                <div id="shk1-buffer-row" class="flex items-center justify-between gap-2">
-                    <div><b>ШК1 (Модель/Назва):</b> <span id="val-shk1" class="text-indigo-600 font-semibold">не зчитано</span></div>
+            <!-- Поточний буфер -->
+            <div id="current-buffer" class="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-1.5 text-slate-600">
+                <div id="row-shk1" class="flex items-center justify-between gap-2">
+                    <div><b>ШК1 (Модель):</b> <span id="val-shk1" class="text-indigo-600 font-semibold">не зчитано</span></div>
                     <button id="btn-undo-shk1" onclick="undoShk1()" class="hidden text-[11px] bg-rose-100 hover:bg-rose-200 text-rose-700 px-2 py-0.5 rounded font-medium transition">
                         Скасувати ШК1
                     </button>
                 </div>
-                <div><b>ШК2 (Заводський / Інв. №):</b> <span id="val-shk2" class="text-indigo-600 font-semibold">очікується...</span></div>
+                <div><b>ШК2 (Серійний №):</b> <span id="val-shk2" class="text-emerald-700 font-semibold">очікується...</span></div>
             </div>
         </div>
 
-        <!-- Список відсканованих коробок та вкладка нестачі по XLS -->
-        <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
-            <div class="flex flex-wrap justify-between items-center gap-2">
-                <h2 class="font-bold text-lg text-slate-700">Відскановані коробки (<span id="box-count">0</span>)</h2>
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <button id="btn-copy-all" onclick="copyAllToClipboard()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md font-medium transition">
-                        📋 Копіювати
-                    </button>
-                    <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md font-medium transition">
-                        Експорт CSV
-                    </button>
-                    <button onclick="clearHistory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 px-3 py-1.5 rounded-md font-medium transition">
-                        Очистити
-                    </button>
+        <!-- Список відсканованих коробок -->
+        <div class="bg-white rounded-xl shadow-md p-4 space-y-3">
+            <div class="flex justify-between items-center gap-2">
+                <h2 class="font-bold text-base text-slate-700">Відскановані (<span id="box-count">0</span>)</h2>
+                <div class="flex gap-1.5">
+                    <button onclick="exportToCSV()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-md font-medium transition">Експорт CSV</button>
+                    <button onclick="clearHistory()" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 px-2.5 py-1.5 rounded-md font-medium transition">Очистити</button>
                 </div>
             </div>
 
-            <!-- Фільтр перегляду при завантаженому XLS -->
-            <div id="list-tabs" class="hidden grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
-                <button id="tab-scanned" onclick="setListTab('scanned')" class="py-1.5 px-2.5 rounded-lg bg-white text-indigo-700 shadow-sm transition">
-                    📦 Відскановані (<span id="tab-scanned-count">0</span>)
-                </button>
-                <button id="tab-missing" onclick="setListTab('missing')" class="py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition">
-                    ⏳ Нестача з опису (<span id="tab-missing-count">0</span>)
-                </button>
-            </div>
-
-            <div id="boxes-list" class="space-y-2 max-h-72 overflow-y-auto pr-1">
-                <div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>
+            <div id="boxes-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                <div id="empty-state" class="text-center text-slate-400 py-6 text-sm">Поки що порожньо</div>
             </div>
         </div>
 
         <!-- Згортаний блок налаштувань у кінці сторінки -->
-        <details id="settings-section" class="bg-white rounded-xl shadow-md border border-slate-200 group">
-            <summary class="list-none cursor-pointer p-4 flex items-center justify-between font-bold text-sm text-slate-700 select-none">
-                <span>⚙️ Налаштування сканера</span>
-                <span class="text-xs font-normal text-slate-400 group-open:hidden">Розгорнути ▾</span>
-                <span class="text-xs font-normal text-slate-400 hidden group-open:inline">Згорнути ▴</span>
+        <details id="settings-details" class="bg-white rounded-xl shadow-md p-4">
+            <summary class="cursor-pointer font-semibold text-sm text-slate-700 flex items-center justify-between list-none">
+                <span>⚙️ Налаштування сканування та камери</span>
+                <span class="text-xs text-indigo-600 font-normal">Натисніть, щоб розгорнути</span>
             </summary>
 
-            <div class="px-5 pb-5 pt-1 space-y-4 border-t border-slate-100">
-                <!-- Режим кроків: 2 кроки (Назва + №) або 1 крок (Лише серійний/інв. №) -->
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Сценарій сканування:</div>
-                    <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                        <button id="flow-btn-two" onclick="setScanFlow('two_steps')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                            2 кроки (Назва + №)
-                        </button>
-                        <button id="flow-btn-serial" onclick="setScanFlow('serial_only')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
-                            🔢 Лише серійний №
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Профіль ОС: Android / iOS -->
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                    <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 uppercase">
-                        <span>📱 Профіль сканування (ОС):</span>
-                        <span id="os-engine-hint" class="text-emerald-700 normal-case font-medium text-right">Апаратний рушій (плавне відео)</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                        <button id="os-btn-android" onclick="setOsProfile('android')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm">
+            <div class="mt-3.5 pt-3.5 border-t space-y-3.5 text-xs">
+                <!-- Профіль ОС -->
+                <div class="space-y-1">
+                    <label class="block font-semibold text-slate-500 uppercase">Профіль пристрою / ОС:</label>
+                    <div class="bg-slate-100 p-1 rounded-lg grid grid-cols-2 gap-1">
+                        <button id="os-btn-android" type="button" onclick="setOsProfile('android')" class="py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-emerald-700 shadow-sm">
                             🤖 Android (Плавний)
                         </button>
-                        <button id="os-btn-ios" onclick="setOsProfile('ios')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
+                        <button id="os-btn-ios" type="button" onclick="setOsProfile('ios')" class="py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900">
                             🍎 iOS (Сумісний)
                         </button>
                     </div>
                 </div>
 
-                <!-- Перемикач режиму підтвердження: Ручний / Авто -->
-                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                    <button id="mode-btn-manual" onclick="setScanMode('manual')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                        ✋ Ручний режим
-                    </button>
-                    <button id="mode-btn-auto" onclick="setScanMode('auto')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                        ⚡ Автосканування
-                    </button>
-                </div>
-
-                <!-- Перемикач типу зчитування: Код або Текст / Лише ШК або QR / Лише Текст (OCR) -->
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати:</div>
-                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                        <button id="input-type-both" onclick="setInputType('both')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                            🔍 Код або Текст
+                <!-- Режим підтвердження -->
+                <div class="space-y-1">
+                    <label class="block font-semibold text-slate-500 uppercase">Режим фіксації:</label>
+                    <div class="bg-slate-100 p-1 rounded-lg grid grid-cols-2 gap-1">
+                        <button id="mode-btn-manual" type="button" onclick="setScanMode('manual')" class="py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            ✋ Ручний
                         </button>
-                        <button id="input-type-barcode" onclick="setInputType('barcode')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                            📊 Лише ШК або QR
-                        </button>
-                        <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                            🔤 Лише Текст
+                        <button id="mode-btn-auto" type="button" onclick="setScanMode('auto')" class="py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900">
+                            ⚡ Автосканування
                         </button>
                     </div>
                 </div>
 
-                <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Мова розпізнавання тексту (OCR):</div>
-                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                        <button id="ocr-lang-eng" onclick="setOcrLang('eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                            🔤 Латиниця (EN)
+                <!-- Кількість кроків -->
+                <div class="space-y-1">
+                    <label class="block font-semibold text-slate-500 uppercase">Цикл обліку:</label>
+                    <div class="bg-slate-100 p-1 rounded-lg grid grid-cols-2 gap-1">
+                        <button id="steps-btn-2" type="button" onclick="setStepMode(2)" class="py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            2 кроки (ШК1 + ШК2)
                         </button>
-                        <button id="ocr-lang-ukr" onclick="setOcrLang('ukr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                            🇺🇦 Кирилиця (UK)
-                        </button>
-                        <button id="ocr-lang-both" onclick="setOcrLang('ukr+eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                            🌐 Обидві (UK+EN)
+                        <button id="steps-btn-1" type="button" onclick="setStepMode(1)" class="py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900">
+                            1 крок (Лише №)
                         </button>
                     </div>
                 </div>
 
                 <!-- Вибір камери -->
-                <div id="camera-select-wrapper" class="hidden space-y-1">
-                    <label for="camera-select" class="block text-xs font-semibold text-slate-500 uppercase">Оберіть об'єктив камери:</label>
+                <div id="camera-select-wrapper" class="space-y-1">
+                    <label for="camera-select" class="block font-semibold text-slate-500 uppercase">Об'єктив камери:</label>
                     <select id="camera-select" onchange="switchCamera()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <option value="">Запуститься автоматично...</option>
                     </select>
                 </div>
             </div>
@@ -384,28 +193,22 @@
     </main>
 
     <canvas id="scan-canvas" class="hidden"></canvas>
-    <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 17:00";
+        const APP_VERSION = "2026-11-22 18:20";
 
         let codeReader = null;
-        let nativeDetector = null;
-        let ocrWorker = null;
-        let ocrWorkerLang = '';
-        let isOcrBusy = false;
-        let isDecodeBusy = false;
-        let lastOcrTime = 0;
-        let scanLoopId = null;
+        let nativeBarcodeDetector = null;
+        let rafId = null;
+        let lastDecodeTime = 0;
+        let isDecodingFrame = false;
         let isScanning = false;
         let currentStream = null;
-        let scanFlow = 'two_steps';
-        let osProfile = 'android';
-        let scanMode = 'manual';
-        let inputType = 'both';
-        let ocrLang = 'ukr+eng';
-        let pinShk1 = false;
-        let isEditingHighlight = false;
+        let currentDeviceId = '';
+
+        let osProfile = 'android'; // 'android' | 'ios'
+        let scanMode = 'manual';   // 'manual' | 'auto'
+        let stepMode = 2;          // 2 | 1
         let currentStep = 1;
         let tempShk1 = '';
         let highlightedCode = '';
@@ -414,22 +217,9 @@
         let boxes = [];
         let torchOn = false;
 
-        let xlsRawRows = [];
-        let xlsHeaderRowIndex = -1;
-        let xlsNameCol = 1;
-        let xlsSerialCol = 4;
-        let xlsSapInvCol = 6;
-        let xlsGroupCol = 17;
-        let xlsDataEndRow = -1;
-
-        let xlsInventory = [];
-        let xlsFileName = '';
-        let currentListTab = 'scanned';
-
-        let cropState = { leftPct: 12, topPct: 27.5, widthPct: 76, heightPct: 45 };
-        let photoRotationDeg = 0;
-        let dragState = null;
-        let focusIndicatorTimeout = null;
+        // Нормалізовані координати центру рамки сканування (0..1)
+        let aimCenterX = 0.5;
+        let aimCenterY = 0.5;
 
         function createReader() {
             const hints = new Map();
@@ -446,915 +236,128 @@
                 ZXing.BarcodeFormat.DATA_MATRIX
             ];
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-            hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+            // Для потокового сканування вимикаємо TRY_HARDER, щоб не гальмувати кадр
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, false);
             return new ZXing.MultiFormatReader(hints);
         }
 
-        function initNativeDetector() {
+        async function initNativeDetector() {
             if ('BarcodeDetector' in window) {
                 try {
-                    nativeDetector = new window.BarcodeDetector({
-                        formats: [
-                            'code_128', 'ean_13', 'ean_8', 'code_39',
-                            'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code', 'data_matrix'
-                        ]
+                    const supported = await window.BarcodeDetector.getSupportedFormats();
+                    const desired = [
+                        'code_128', 'ean_13', 'ean_8', 'code_39',
+                        'upc_a', 'upc_e', 'itf', 'codabar',
+                        'qr_code', 'data_matrix'
+                    ].filter(f => supported.includes(f));
+                    nativeBarcodeDetector = new window.BarcodeDetector({
+                        formats: desired.length ? desired : supported
                     });
                 } catch (e) {
-                    try {
-                        nativeDetector = new window.BarcodeDetector();
-                    } catch (e2) {
-                        nativeDetector = null;
-                    }
+                    nativeBarcodeDetector = null;
                 }
             }
         }
 
-        async function getOcrWorker() {
-            if (!window.Tesseract) return null;
-            if (ocrWorker && ocrWorkerLang === ocrLang) return ocrWorker;
-
-            if (ocrWorker) {
-                try { await ocrWorker.terminate(); } catch (e) {}
-                ocrWorker = null;
-            }
-
-            const prevStatus = document.getElementById('confirm-status').innerText;
-            document.getElementById('confirm-status').innerText = `Завантаження OCR (${ocrLang.toUpperCase()})...`;
-            ocrWorker = await Tesseract.createWorker(ocrLang);
-            await ocrWorker.setParameters({
-                tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
-            });
-            ocrWorkerLang = ocrLang;
-            if (!highlightedCode) {
-                document.getElementById('confirm-status').innerText = prevStatus.startsWith('Завантаження')
-                    ? 'Помістіть код або назву в рамку чи вставте скопійоване'
-                    : prevStatus;
-            }
-            return ocrWorker;
-        }
-
-        window.onload = function() {
+        window.onload = async function() {
             document.getElementById('app-version').innerText = `Версія: ${APP_VERSION}`;
             codeReader = createReader();
-            initNativeDetector();
+            await initNativeDetector();
 
-            const savedFlow = localStorage.getItem('scan_flow_mode');
-            setScanFlow(savedFlow === 'serial_only' ? 'serial_only' : 'two_steps');
-
-            const savedOs = localStorage.getItem('scan_os_profile');
+            const savedOs = localStorage.getItem('os_profile');
             if (savedOs === 'android' || savedOs === 'ios') {
                 setOsProfile(savedOs);
             } else {
-                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
                 setOsProfile(isIOS ? 'ios' : 'android');
             }
 
             const savedMode = localStorage.getItem('scan_mode');
-            setScanMode(savedMode === 'auto' ? 'auto' : 'manual');
-
-            const savedInputType = localStorage.getItem('scan_input_type');
-            if (savedInputType === 'barcode' || savedInputType === 'ocr' || savedInputType === 'both') {
-                setInputType(savedInputType);
-            } else {
-                setInputType('both');
+            if (savedMode === 'auto' || savedMode === 'manual') {
+                setScanMode(savedMode);
             }
 
-            const savedLang = localStorage.getItem('scan_ocr_lang');
-            if (savedLang === 'eng' || savedLang === 'ukr' || savedLang === 'ukr+eng') {
-                setOcrLang(savedLang);
-            } else {
-                setOcrLang('ukr+eng');
-            }
-
-            const savedW = localStorage.getItem('aim_box_w');
-            const savedH = localStorage.getItem('aim_box_h');
-            if (savedW) document.getElementById('aim-w-slider').value = savedW;
-            if (savedH) document.getElementById('aim-h-slider').value = savedH;
-            updateAimBoxSize();
-
-            const savedPin = localStorage.getItem('pin_shk1') === 'true';
-            pinShk1 = savedPin;
-            document.getElementById('pin-shk1-toggle').checked = savedPin;
-
-            const savedXlsState = localStorage.getItem('xls_inventory_sap_v2');
-            if (savedXlsState) {
-                try {
-                    const parsedState = JSON.parse(savedXlsState);
-                    xlsInventory = parsedState.items || [];
-                    xlsFileName = parsedState.fileName || 'Завантажений XLS';
-                    xlsRawRows = parsedState.rawRows || [];
-                    xlsHeaderRowIndex = parsedState.headerRowIndex ?? -1;
-                    xlsNameCol = parsedState.nameCol ?? 1;
-                    xlsSerialCol = parsedState.serialCol ?? 4;
-                    xlsSapInvCol = parsedState.sapInvCol ?? 6;
-                    xlsGroupCol = parsedState.groupCol ?? 17;
-                    xlsDataEndRow = parsedState.dataEndRow ?? -1;
-                } catch (e) {}
+            const savedSteps = Number(localStorage.getItem('step_mode'));
+            if (savedSteps === 1 || savedSteps === 2) {
+                setStepMode(savedSteps);
             }
 
             const saved = localStorage.getItem('scanned_boxes');
             if (saved) {
                 boxes = JSON.parse(saved);
+                renderBoxes();
             }
-
-            updateInventoryUI();
-            renderBoxes();
-
-            window.addEventListener('pointermove', onCropDragMove);
-            window.addEventListener('pointerup', onCropDragEnd);
-            window.addEventListener('pointercancel', onCropDragEnd);
         };
-
-        function setScanFlow(flow) {
-            scanFlow = flow;
-            localStorage.setItem('scan_flow_mode', flow);
-
-            const twoBtn = document.getElementById('flow-btn-two');
-            const serialBtn = document.getElementById('flow-btn-serial');
-            const pinWrapper = document.getElementById('pin-shk1-wrapper');
-            const shk1Row = document.getElementById('shk1-buffer-row');
-
-            const inactiveClass = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
-            const activeClass = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-
-            if (flow === 'serial_only') {
-                twoBtn.className = inactiveClass;
-                serialBtn.className = activeClass;
-                pinWrapper.classList.add('hidden');
-                shk1Row.classList.add('hidden');
-                currentStep = 2;
-                tempShk1 = '';
-                document.getElementById('btn-undo-shk1').classList.add('hidden');
-                document.getElementById('step-indicator').innerText = "Режим: Лише серійний / інв. №";
-                document.getElementById('badge-shk1').innerText = "Без назви (ШК1)";
-                document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
-            } else {
-                twoBtn.className = activeClass;
-                serialBtn.className = inactiveClass;
-                pinWrapper.classList.remove('hidden');
-                shk1Row.classList.remove('hidden');
-                undoShk1();
-            }
-        }
-
-        function handleXlsUpload(e) {
-            if (!e.target.files || e.target.files.length === 0) return;
-            const file = e.target.files[0];
-
-            if (!window.XLSX) {
-                document.getElementById('xls-file-info').innerText = 'Помилка: бібліотека Excel не завантажилася.';
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    const data = new Uint8Array(ev.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const sheet = workbook.Sheets[firstSheetName];
-                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-                    const parsed = parseSapInventoryRows(rows);
-                    if (parsed.length === 0) {
-                        document.getElementById('xls-file-info').innerText = 'У файлі не знайдено позицій із Заводським або Інв. № в SAP.';
-                        return;
-                    }
-
-                    xlsInventory = parsed;
-                    xlsFileName = file.name;
-
-                    localStorage.setItem('xls_inventory_sap_v2', JSON.stringify({
-                        items: xlsInventory,
-                        fileName: xlsFileName,
-                        rawRows: xlsRawRows,
-                        headerRowIndex: xlsHeaderRowIndex,
-                        nameCol: xlsNameCol,
-                        serialCol: xlsSerialCol,
-                        sapInvCol: xlsSapInvCol,
-                        groupCol: xlsGroupCol,
-                        dataEndRow: xlsDataEndRow
-                    }));
-
-                    updateInventoryUI();
-                    renderBoxes();
-                } catch (err) {
-                    document.getElementById('xls-file-info').innerText = `Помилка читання файлу: ${err.message || err}`;
-                }
-            };
-            reader.readAsArrayBuffer(file);
-            e.target.value = '';
-        }
-
-        function parseSapInventoryRows(rows) {
-            if (!rows || rows.length === 0) return [];
-            xlsRawRows = rows;
-
-            let headerRowIdx = -1;
-            let nameCol = 1;
-            let serialCol = 4;
-            let sapInvCol = 6;
-            let groupCol = 17;
-
-            for (let r = 0; r < Math.min(30, rows.length); r++) {
-                const row = rows[r].map(c => String(c || '').replace(/\s+/g, ' ').trim().toLowerCase());
-                let fSerial = -1;
-                let fSap = -1;
-                let fName = -1;
-                let fGroup = -1;
-
-                row.forEach((cell, idx) => {
-                    if (!cell) return;
-                    if (fSerial === -1 && (cell.includes('заводськ') || cell.includes('серій') || cell === 'serial')) {
-                        fSerial = idx;
-                    }
-                    if (fSap === -1 && (cell.includes('інв.') && cell.includes('sap') || cell.includes('інв №') || cell.includes('інв. №'))) {
-                        fSap = idx;
-                    }
-                    if (fName === -1 && (cell.includes('назва') || cell.includes('найменування') || cell.includes('номенклатура'))) {
-                        fName = idx;
-                    }
-                    if (fGroup === -1 && cell.includes('група')) {
-                        fGroup = idx;
-                    }
-                });
-
-                if (fSerial !== -1 || fSap !== -1) {
-                    headerRowIdx = r;
-                    serialCol = fSerial;
-                    sapInvCol = fSap;
-                    nameCol = fName !== -1 ? fName : 1;
-                    groupCol = fGroup;
-                    break;
-                }
-            }
-
-            xlsHeaderRowIndex = headerRowIdx;
-            xlsNameCol = nameCol;
-            xlsSerialCol = serialCol;
-            xlsSapInvCol = sapInvCol;
-            xlsGroupCol = groupCol;
-
-            const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
-            const result = [];
-            let endRow = rows.length - 1;
-
-            for (let r = startRow; r < rows.length; r++) {
-                const row = rows[r];
-                if (!row) continue;
-
-                const firstCell = String(row[0] ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-                const secondCell = String(row[1] ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-
-                if (
-                    secondCell === 'разом' ||
-                    firstCell.startsWith('загална кількість') ||
-                    firstCell.startsWith('голова комісії') ||
-                    firstCell.startsWith('всі цінності')
-                ) {
-                    endRow = r - 1;
-                    break;
-                }
-
-                const name = nameCol >= 0 ? String(row[nameCol] ?? '').replace(/\s+/g, ' ').trim() : '';
-                const serialNo = serialCol >= 0 ? String(row[serialCol] ?? '').trim() : '';
-                const sapInvNo = sapInvCol >= 0 ? String(row[sapInvCol] ?? '').trim() : '';
-                const groupName = groupCol >= 0 ? String(row[groupCol] ?? '').trim() : '';
-
-                if (!serialNo && !sapInvNo && !name) continue;
-                if (/^\d+$/.test(firstCell) && !serialNo && !sapInvNo && /^\d+$/.test(secondCell)) continue;
-
-                result.push({
-                    rowNum: result.length + 1,
-                    rawRowIndex: r,
-                    name,
-                    serialNo,
-                    sapInvNo,
-                    groupName
-                });
-            }
-
-            xlsDataEndRow = endRow;
-            return result;
-        }
-
-        function clearInventoryBase() {
-            xlsInventory = [];
-            xlsFileName = '';
-            xlsRawRows = [];
-            xlsHeaderRowIndex = -1;
-            xlsDataEndRow = -1;
-            currentListTab = 'scanned';
-            localStorage.removeItem('xls_inventory_sap_v2');
-            updateInventoryUI();
-            renderBoxes();
-        }
-
-        function matchXlsRecord(value) {
-            if (!xlsInventory || xlsInventory.length === 0) return null;
-            const target = String(value || '').trim().toLowerCase();
-            if (!target) return null;
-
-            for (const item of xlsInventory) {
-                if (item.serialNo && item.serialNo.toLowerCase() === target) {
-                    return { item, matchedBy: 'Заводський номер' };
-                }
-                if (item.sapInvNo && item.sapInvNo.toLowerCase() === target) {
-                    return { item, matchedBy: 'Інв. № в SAP' };
-                }
-            }
-            return null;
-        }
-
-        function getReconciliationSummary() {
-            const matchedItemIndexes = new Set();
-            const extraBoxes = [];
-
-            boxes.forEach(b => {
-                const found = matchXlsRecord(b.shk2) || matchXlsRecord(b.shk1);
-                if (found) {
-                    const idx = xlsInventory.indexOf(found.item);
-                    if (idx !== -1) matchedItemIndexes.add(idx);
-                } else {
-                    extraBoxes.push(b);
-                }
-            });
-
-            const missingItems = xlsInventory.filter((_, idx) => !matchedItemIndexes.has(idx));
-
-            return {
-                totalXls: xlsInventory.length,
-                matchedCount: matchedItemIndexes.size,
-                matchedItemIndexes,
-                missingItems,
-                extraBoxes,
-                extraCount: extraBoxes.length
-            };
-        }
-
-        function updateInventoryUI() {
-            const hasXls = xlsInventory.length > 0;
-            const infoEl = document.getElementById('xls-file-info');
-            const statsPanel = document.getElementById('inventory-stats-panel');
-            const clearBtn = document.getElementById('btn-clear-xls');
-            const listTabs = document.getElementById('list-tabs');
-
-            if (!hasXls) {
-                infoEl.innerText = 'Файл опису не завантажено (звірка вимкнена)';
-                statsPanel.classList.add('hidden');
-                clearBtn.classList.add('hidden');
-                listTabs.classList.add('hidden');
-                return;
-            }
-
-            const summary = getReconciliationSummary();
-            infoEl.innerText = `Файл: ${xlsFileName} (${summary.totalXls} поз.)`;
-            statsPanel.classList.remove('hidden');
-            clearBtn.classList.remove('hidden');
-            listTabs.classList.remove('hidden');
-
-            document.getElementById('stat-xls-total').innerText = summary.totalXls;
-            document.getElementById('stat-xls-matched').innerText = summary.matchedCount;
-            document.getElementById('stat-xls-missing').innerText = summary.missingItems.length;
-            document.getElementById('stat-xls-extra').innerText = summary.extraCount;
-
-            document.getElementById('tab-scanned-count').innerText = boxes.length;
-            document.getElementById('tab-missing-count').innerText = summary.missingItems.length;
-        }
-
-        function setListTab(tab) {
-            currentListTab = tab;
-            const scannedBtn = document.getElementById('tab-scanned');
-            const missingBtn = document.getElementById('tab-missing');
-
-            if (tab === 'scanned') {
-                scannedBtn.className = "py-1.5 px-2.5 rounded-lg bg-white text-indigo-700 shadow-sm transition";
-                missingBtn.className = "py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition";
-            } else {
-                missingBtn.className = "py-1.5 px-2.5 rounded-lg bg-white text-amber-700 shadow-sm transition";
-                scannedBtn.className = "py-1.5 px-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition";
-            }
-            renderBoxes();
-        }
-
-        function exportReconciliationXlsx() {
-            if (xlsInventory.length === 0 && boxes.length === 0) return;
-
-            const summary = getReconciliationSummary();
-            const matchedByRawRow = new Map();
-
-            boxes.forEach(b => {
-                const found = matchXlsRecord(b.shk2) || matchXlsRecord(b.shk1);
-                if (found && found.item && typeof found.item.rawRowIndex === 'number') {
-                    if (!matchedByRawRow.has(found.item.rawRowIndex)) {
-                        matchedByRawRow.set(found.item.rawRowIndex, found.matchedBy);
-                    }
-                }
-            });
-
-            const wb = XLSX.utils.book_new();
-
-            if (xlsRawRows.length > 0) {
-                const maxCols = xlsRawRows.reduce((m, r) => Math.max(m, Array.isArray(r) ? r.length : 0), 0);
-                const markColIdx = Math.max(maxCols, 19);
-
-                const annotatedRows = xlsRawRows.map((row, idx) => {
-                    const newRow = Array.isArray(row) ? [...row] : [];
-                    while (newRow.length <= markColIdx) {
-                        newRow.push('');
-                    }
-
-                    if (idx === xlsHeaderRowIndex) {
-                        newRow[markColIdx] = 'Позначка звірки';
-                    } else if (matchedByRawRow.has(idx)) {
-                        newRow[markColIdx] = `ЗНАЙДЕНО (${matchedByRawRow.get(idx)})`;
-                    }
-                    return newRow;
-                });
-
-                const wsMain = XLSX.utils.aoa_to_sheet(annotatedRows);
-                XLSX.utils.book_append_sheet(wb, wsMain, "Опис (звірка)");
-            }
-
-            const surplusRows = [
-                ["№ з/п", "Модель / Назва (ШК1)", "Заводський / Інв. № (ШК2)", "Час сканування"]
-            ];
-            summary.extraBoxes.forEach((b, idx) => {
-                surplusRows.push([
-                    idx + 1,
-                    b.shk1 || '—',
-                    b.shk2 || '—',
-                    b.time || '—'
-                ]);
-            });
-            const wsSurplus = XLSX.utils.aoa_to_sheet(surplusRows);
-            XLSX.utils.book_append_sheet(wb, wsSurplus, "Надлишок");
-
-            const baseName = xlsFileName ? xlsFileName.replace(/\.(xlsx|xls|csv)$/i, '') : 'inventory';
-            XLSX.writeFile(wb, `${baseName}_звірка_${new Date().toISOString().slice(0,10)}.xlsx`);
-        }
-
-        function setPhotoStatus(msg, isError = false) {
-            const el = document.getElementById('photo-scan-status');
-            if (!msg) {
-                el.classList.add('hidden');
-                el.innerText = '';
-                return;
-            }
-            el.innerText = msg;
-            el.className = isError
-                ? 'text-xs bg-rose-950/85 border border-rose-500/70 text-rose-200 rounded-lg px-3 py-2'
-                : 'text-xs bg-amber-950/80 border border-amber-500/60 text-amber-200 rounded-lg px-3 py-2';
-            el.classList.remove('hidden');
-        }
-
-        async function pasteIntoHighlight() {
-            try {
-                if (navigator.clipboard && navigator.clipboard.readText) {
-                    const text = (await navigator.clipboard.readText() || '').trim();
-                    if (text) {
-                        setHighlightedCode(text, 'З буфера обміну');
-                        return;
-                    }
-                }
-            } catch (e) {}
-
-            const input = document.getElementById('highlighted-code');
-            input.focus();
-            document.getElementById('confirm-status').innerText = 'Натисніть і утримуйте поле, щоб вставити скопійований текст';
-        }
-
-        async function handleVideoTapFocus(e) {
-            if (!isScanning || !currentStream) return;
-            const container = document.getElementById('reader-container');
-            const aimBox = document.getElementById('aim-box');
-            const reticle = document.getElementById('focus-reticle');
-            const rect = container.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-
-            const tapX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-            const tapY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
-
-            const boxW = aimBox.offsetWidth || rect.width * 0.84;
-            const boxH = aimBox.offsetHeight || rect.height * 0.48;
-
-            const clampedX = Math.max(boxW / 2, Math.min(rect.width - boxW / 2, tapX));
-            const clampedY = Math.max(boxH / 2, Math.min(rect.height - boxH / 2, tapY));
-
-            aimBox.style.left = `${(clampedX / rect.width) * 100}%`;
-            aimBox.style.top = `${(clampedY / rect.height) * 100}%`;
-
-            reticle.style.left = `${(tapX / rect.width) * 100}%`;
-            reticle.style.top = `${(tapY / rect.height) * 100}%`;
-            reticle.classList.remove('hidden');
-            clearTimeout(focusIndicatorTimeout);
-            focusIndicatorTimeout = setTimeout(() => {
-                reticle.classList.add('hidden');
-            }, 650);
-
-            const track = currentStream.getVideoTracks()[0];
-            if (track && track.applyConstraints) {
-                const normX = Math.max(0, Math.min(1, tapX / rect.width));
-                const normY = Math.max(0, Math.min(1, tapY / rect.height));
-                const caps = track.getCapabilities ? track.getCapabilities() : {};
-
-                const advanced = [];
-                if (caps.pointsOfInterest) {
-                    advanced.push({ pointsOfInterest: [{ x: normX, y: normY }] });
-                }
-                if (caps.focusMode && Array.isArray(caps.focusMode)) {
-                    if (caps.focusMode.includes('single-shot')) {
-                        advanced.push({ focusMode: 'single-shot' });
-                    } else if (caps.focusMode.includes('continuous')) {
-                        advanced.push({ focusMode: 'continuous' });
-                    }
-                }
-
-                if (advanced.length > 0) {
-                    try {
-                        await track.applyConstraints({ advanced });
-                    } catch (err) {}
-                }
-            }
-
-            lastOcrTime = 0;
-        }
 
         function setOsProfile(profile) {
             osProfile = profile;
-            localStorage.setItem('scan_os_profile', profile);
-
+            localStorage.setItem('os_profile', profile);
             const androidBtn = document.getElementById('os-btn-android');
             const iosBtn = document.getElementById('os-btn-ios');
-            const hint = document.getElementById('os-engine-hint');
-
             if (profile === 'android') {
-                androidBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm";
-                iosBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
-                hint.innerText = nativeDetector
-                    ? "Апаратний BarcodeDetector (60 FPS без лагів)"
-                    : "Оптимізований цикл (знижене навантаження CPU)";
-                hint.className = "text-emerald-700 normal-case font-medium text-right";
+                androidBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-emerald-700 shadow-sm";
+                iosBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
             } else {
-                iosBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-                androidBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
-                hint.innerText = "ZXing JS рушій (для iPhone / Safari)";
-                hint.className = "text-indigo-700 normal-case font-medium text-right";
-            }
-        }
-
-        function applyPhotoRotation() {
-            const rotator = document.getElementById('photo-rotator');
-            const img = document.getElementById('photo-preview-img');
-            const stage = document.getElementById('photo-stage');
-
-            photoRotationDeg = ((photoRotationDeg % 360) + 360) % 360;
-            document.getElementById('photo-rotation-label').innerText = `${photoRotationDeg}°`;
-
-            const isSideways = photoRotationDeg === 90 || photoRotationDeg === 270;
-            const stageW = stage.clientWidth || 360;
-            const stageH = stage.clientHeight || 320;
-
-            if (isSideways) {
-                img.style.maxWidth = `${stageH * 0.92}px`;
-                img.style.maxHeight = `${stageW * 0.92}px`;
-            } else {
-                img.style.maxWidth = '100%';
-                img.style.maxHeight = '100%';
-            }
-
-            rotator.style.transform = `rotate(${photoRotationDeg}deg)`;
-        }
-
-        function rotatePhoto90() {
-            photoRotationDeg = (photoRotationDeg + 90) % 360;
-            setPhotoStatus('');
-            applyPhotoRotation();
-        }
-
-        function applyCropBoxStyles() {
-            const box = document.getElementById('photo-crop-box');
-            box.style.left = `${cropState.leftPct}%`;
-            box.style.top = `${cropState.topPct}%`;
-            box.style.width = `${cropState.widthPct}%`;
-            box.style.height = `${cropState.heightPct}%`;
-            document.getElementById('crop-w-val').innerText = `${Math.round(cropState.widthPct)}%`;
-            document.getElementById('crop-h-val').innerText = `${Math.round(cropState.heightPct)}%`;
-        }
-
-        function updateCropBoxSize() {
-            const w = Number(document.getElementById('crop-w-slider').value);
-            const h = Number(document.getElementById('crop-h-slider').value);
-            cropState.widthPct = w;
-            cropState.heightPct = h;
-            cropState.leftPct = Math.min(cropState.leftPct, 100 - cropState.widthPct);
-            cropState.topPct = Math.min(cropState.topPct, 100 - cropState.heightPct);
-            applyCropBoxStyles();
-        }
-
-        function resetCropBox() {
-            cropState.widthPct = 76;
-            cropState.heightPct = 45;
-            cropState.leftPct = 12;
-            cropState.topPct = 27.5;
-            document.getElementById('crop-w-slider').value = 76;
-            document.getElementById('crop-h-slider').value = 45;
-            applyCropBoxStyles();
-        }
-
-        function startCropDrag(e) {
-            e.preventDefault();
-            dragState = {
-                startX: e.clientX,
-                startY: e.clientY,
-                origLeft: cropState.leftPct,
-                origTop: cropState.topPct
-            };
-        }
-
-        function onCropDragMove(e) {
-            if (!dragState) return;
-            const stage = document.getElementById('photo-stage');
-            const rect = stage.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-
-            const dxPct = ((e.clientX - dragState.startX) / rect.width) * 100;
-            const dyPct = ((e.clientY - dragState.startY) / rect.height) * 100;
-
-            cropState.leftPct = Math.max(0, Math.min(100 - cropState.widthPct, dragState.origLeft + dxPct));
-            cropState.topPct = Math.max(0, Math.min(100 - cropState.heightPct, dragState.origTop + dyPct));
-            applyCropBoxStyles();
-        }
-
-        function onCropDragEnd() {
-            dragState = null;
-        }
-
-        function openPhotoCropper(e) {
-            if (!e.target.files || e.target.files.length === 0) return;
-            const file = e.target.files[0];
-
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const img = document.getElementById('photo-preview-img');
-                img.onload = function() {
-                    photoRotationDeg = 0;
-                    setPhotoStatus('');
-                    resetCropBox();
-                    document.getElementById('photo-crop-modal').classList.remove('hidden');
-                    applyPhotoRotation();
-                    document.getElementById('photo-crop-modal').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                };
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-            e.target.value = '';
-        }
-
-        function closePhotoCropModal() {
-            dragState = null;
-            photoRotationDeg = 0;
-            setPhotoStatus('');
-            document.getElementById('photo-crop-modal').classList.add('hidden');
-            document.getElementById('photo-preview-img').src = '';
-            document.getElementById('photo-rotator').style.transform = 'rotate(0deg)';
-        }
-
-        function buildRotatedPhotoCanvas(img) {
-            const natW = img.naturalWidth;
-            const natH = img.naturalHeight;
-            const rotCanvas = document.getElementById('rotated-photo-canvas');
-            const ctx = rotCanvas.getContext('2d');
-
-            const isSideways = photoRotationDeg === 90 || photoRotationDeg === 270;
-            rotCanvas.width = isSideways ? natH : natW;
-            rotCanvas.height = isSideways ? natW : natH;
-
-            ctx.save();
-            ctx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
-            ctx.rotate((photoRotationDeg * Math.PI) / 180);
-            ctx.drawImage(img, -natW / 2, -natH / 2);
-            ctx.restore();
-
-            return rotCanvas;
-        }
-
-        function applyHighContrastToCanvas(canvas) {
-            const ctx = canvas.getContext('2d');
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imgData.data;
-            const contrast = 1.65;
-            const intercept = 128 * (1 - contrast);
-
-            for (let i = 0; i < data.length; i += 4) {
-                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                const val = Math.max(0, Math.min(255, gray * contrast + intercept));
-                data[i] = val;
-                data[i + 1] = val;
-                data[i + 2] = val;
-            }
-            ctx.putImageData(imgData, 0, 0);
-        }
-
-        async function scanCroppedPhoto() {
-            const img = document.getElementById('photo-preview-img');
-            const cropBox = document.getElementById('photo-crop-box');
-            const boostContrast = document.getElementById('photo-boost-contrast').checked;
-            if (!img.src || !img.naturalWidth || !img.naturalHeight) return;
-
-            setPhotoStatus('');
-            const rotCanvas = buildRotatedPhotoCanvas(img);
-            const rotW = rotCanvas.width;
-            const rotH = rotCanvas.height;
-
-            const rotator = document.getElementById('photo-rotator');
-            const rotatorRect = rotator.getBoundingClientRect();
-            const boxRect = cropBox.getBoundingClientRect();
-
-            const displayedImgRatio = rotW / rotH;
-            const containerRatio = rotatorRect.width / rotatorRect.height;
-
-            let dispW, dispH, dispLeft, dispTop;
-            if (displayedImgRatio > containerRatio) {
-                dispW = rotatorRect.width;
-                dispH = dispW / displayedImgRatio;
-                dispLeft = rotatorRect.left;
-                dispTop = rotatorRect.top + (rotatorRect.height - dispH) / 2;
-            } else {
-                dispH = rotatorRect.height;
-                dispW = dispH * displayedImgRatio;
-                dispLeft = rotatorRect.left + (rotatorRect.width - dispW) / 2;
-                dispTop = rotatorRect.top;
-            }
-
-            const relLeft = Math.max(0, Math.min(1, (boxRect.left - dispLeft) / dispW));
-            const relTop = Math.max(0, Math.min(1, (boxRect.top - dispTop) / dispH));
-            const relWidth = Math.max(0.02, Math.min(1 - relLeft, boxRect.width / dispW));
-            const relHeight = Math.max(0.02, Math.min(1 - relTop, boxRect.height / dispH));
-
-            const sx = Math.floor(relLeft * rotW);
-            const sy = Math.floor(relTop * rotH);
-            const sw = Math.max(1, Math.floor(relWidth * rotW));
-            const sh = Math.max(1, Math.floor(relHeight * rotH));
-
-            const canvas = document.getElementById('scan-canvas');
-            const scale = Math.min(1, 3200 / Math.max(sw, sh));
-            canvas.width = Math.max(1, Math.floor(sw * scale));
-            canvas.height = Math.max(1, Math.floor(sh * scale));
-
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(rotCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-
-            if (boostContrast) {
-                applyHighContrastToCanvas(canvas);
-            }
-
-            const btn = document.getElementById('btn-scan-cropped-photo');
-            const origLabel = btn.innerText;
-            btn.disabled = true;
-            btn.innerText = '⏳ Сканування...';
-
-            try {
-                if (inputType === 'both' || inputType === 'barcode') {
-                    let decoded = await decodeBarcodeSmart(canvas);
-                    if (!decoded && !boostContrast) {
-                        const altCanvas = document.createElement('canvas');
-                        altCanvas.width = canvas.width;
-                        altCanvas.height = canvas.height;
-                        altCanvas.getContext('2d').drawImage(canvas, 0, 0);
-                        applyHighContrastToCanvas(altCanvas);
-                        decoded = await decodeBarcodeSmart(altCanvas);
-                    }
-                    if (decoded && decoded.trim()) {
-                        closePhotoCropModal();
-                        handleDetectedCode(decoded, 'ШК або QR з фото (HD)');
-                        return;
-                    }
-                }
-
-                if (inputType !== 'barcode' && scanFlow === 'two_steps' && currentStep === 1) {
-                    const text = await recognizeTextFromCanvas(canvas);
-                    if (text && text.trim()) {
-                        closePhotoCropModal();
-                        handleDetectedCode(text, `Текст з фото (${ocrLang.toUpperCase()})`);
-                        return;
-                    }
-                }
-
-                setPhotoStatus(
-                    inputType === 'barcode'
-                        ? 'Штрихкод або QR у вибраній рамці не розпізнано. Переконайтесь, що код помістився повністю, або увімкніть «Підсилити контраст».'
-                        : 'У вибраній рамці нічого не розпізнано. Переконайтесь, що код або текст помістився повністю, або увімкніть «Підсилити контраст».',
-                    true
-                );
-            } finally {
-                btn.disabled = false;
-                btn.innerText = origLabel;
-            }
-        }
-
-        function updateAimBoxSize() {
-            const w = document.getElementById('aim-w-slider').value;
-            const h = document.getElementById('aim-h-slider').value;
-            document.getElementById('aim-w-val').innerText = `${w}%`;
-            document.getElementById('aim-h-val').innerText = `${h}%`;
-
-            const aimBox = document.getElementById('aim-box');
-            aimBox.style.width = `${w}%`;
-            aimBox.style.height = `${h}%`;
-
-            localStorage.setItem('aim_box_w', w);
-            localStorage.setItem('aim_box_h', h);
-        }
-
-        function resetAimBoxSize() {
-            document.getElementById('aim-w-slider').value = 84;
-            document.getElementById('aim-h-slider').value = 48;
-            const aimBox = document.getElementById('aim-box');
-            aimBox.style.left = '50%';
-            aimBox.style.top = '50%';
-            updateAimBoxSize();
-        }
-
-        function setOcrLang(lang) {
-            ocrLang = lang;
-            localStorage.setItem('scan_ocr_lang', lang);
-
-            const engBtn = document.getElementById('ocr-lang-eng');
-            const ukrBtn = document.getElementById('ocr-lang-ukr');
-            const bothBtn = document.getElementById('ocr-lang-both');
-
-            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
-            const activeClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-
-            engBtn.className = lang === 'eng' ? activeClass : inactiveClass;
-            ukrBtn.className = lang === 'ukr' ? activeClass : inactiveClass;
-            bothBtn.className = lang === 'ukr+eng' ? activeClass : inactiveClass;
-
-            if (ocrWorker && ocrWorkerLang !== lang) {
-                getOcrWorker().catch(() => {});
-            }
-        }
-
-        function togglePinShk1(checked) {
-            pinShk1 = !!checked;
-            localStorage.setItem('pin_shk1', String(pinShk1));
-            if (scanFlow === 'serial_only') return;
-
-            if (!pinShk1 && currentStep === 2 && tempShk1) {
-                document.getElementById('badge-shk1').innerText = "Очікування ШК2";
-            } else if (pinShk1 && tempShk1) {
-                currentStep = 2;
-                document.getElementById('val-shk1').innerText = tempShk1;
-                document.getElementById('btn-undo-shk1').classList.remove('hidden');
-                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)";
-                document.getElementById('badge-shk1').innerText = "📌 ШК1 закріплено";
-                document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
+                iosBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-indigo-700 shadow-sm";
+                androidBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
             }
         }
 
         function setScanMode(mode) {
             scanMode = mode;
             localStorage.setItem('scan_mode', mode);
-
             const manualBtn = document.getElementById('mode-btn-manual');
             const autoBtn = document.getElementById('mode-btn-auto');
             const confirmBox = document.getElementById('manual-confirm-box');
 
             if (mode === 'manual') {
-                manualBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-                autoBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
+                manualBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-indigo-700 shadow-sm";
+                autoBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
                 confirmBox.classList.remove('hidden');
             } else {
-                autoBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-emerald-700 shadow-sm";
-                manualBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
+                autoBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-emerald-700 shadow-sm";
+                manualBtn.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
                 confirmBox.classList.add('hidden');
                 clearHighlightedCode();
             }
         }
 
-        function setInputType(type) {
-            inputType = type;
-            localStorage.setItem('scan_input_type', type);
+        function setStepMode(steps) {
+            stepMode = steps;
+            localStorage.setItem('step_mode', String(steps));
+            const b2 = document.getElementById('steps-btn-2');
+            const b1 = document.getElementById('steps-btn-1');
+            const row1 = document.getElementById('row-shk1');
 
-            const bothBtn = document.getElementById('input-type-both');
-            const barcodeBtn = document.getElementById('input-type-barcode');
-            const ocrBtn = document.getElementById('input-type-ocr');
+            if (steps === 1) {
+                b1.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-emerald-700 shadow-sm";
+                b2.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
+                row1.classList.add('hidden');
+                currentStep = 2;
+            } else {
+                b2.className = "py-1.5 px-2.5 rounded-md font-semibold transition bg-white text-indigo-700 shadow-sm";
+                b1.className = "py-1.5 px-2.5 rounded-md font-semibold transition text-slate-600 hover:text-slate-900";
+                row1.classList.remove('hidden');
+                currentStep = tempShk1 ? 2 : 1;
+            }
+            updateStepUI();
+        }
 
-            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
-
-            bothBtn.className = type === 'both'
-                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm"
-                : inactiveClass;
-            barcodeBtn.className = type === 'barcode'
-                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm"
-                : inactiveClass;
-            ocrBtn.className = type === 'ocr'
-                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-amber-700 shadow-sm"
-                : inactiveClass;
-
-            if (type === 'ocr') {
-                getOcrWorker().catch(() => {});
+        function updateStepUI() {
+            const indicator = document.getElementById('step-indicator');
+            const badge = document.getElementById('badge-step');
+            if (stepMode === 1) {
+                indicator.innerText = "1 крок: Серійний / Інв. №";
+                badge.innerText = "Очікування №";
+                badge.className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
+            } else if (currentStep === 1) {
+                indicator.innerText = "Крок 1 з 2: Назва / Модель";
+                badge.innerText = "Очікування ШК1";
+                badge.className = "text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium";
+            } else {
+                indicator.innerText = "Крок 2 з 2: Серійний номер";
+                badge.innerText = "Очікування ШК2";
+                badge.className = "text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium";
             }
         }
 
@@ -1387,7 +390,10 @@
 
         async function initAndStartScanner() {
             try {
-                const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+                const tempStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
                 tempStream.getTracks().forEach(t => t.stop());
 
                 const devices = await navigator.mediaDevices.enumerateDevices();
@@ -1397,7 +403,7 @@
                     const select = document.getElementById('camera-select');
                     select.innerHTML = '';
 
-                    let preferredId = videoDevices[0].deviceId;
+                    let preferredId = currentDeviceId || videoDevices[0].deviceId;
 
                     videoDevices.forEach((device, idx) => {
                         const opt = document.createElement('option');
@@ -1405,46 +411,55 @@
                         opt.text = device.label || `Камера ${idx + 1}`;
                         select.appendChild(opt);
 
-                        const lower = (device.label || '').toLowerCase();
-                        if ((lower.includes('back') || lower.includes('задн')) && !lower.includes('ultra') && !lower.includes('надшироко')) {
-                            preferredId = device.deviceId;
+                        if (!currentDeviceId) {
+                            const lower = (device.label || '').toLowerCase();
+                            if ((lower.includes('back') || lower.includes('задн')) && !lower.includes('ultra') && !lower.includes('надшироко')) {
+                                preferredId = device.deviceId;
+                            }
                         }
                     });
 
                     select.value = preferredId;
-                    document.getElementById('camera-select-wrapper').classList.remove('hidden');
-
                     await startStream(preferredId);
                 } else {
-                    document.getElementById('confirm-status').innerText = 'Камери не знайдено. Перевірте дозволи браузера.';
+                    alert("Камери не знайдено.");
                 }
             } catch (err) {
-                document.getElementById('confirm-status').innerText = 'Не вдалося запустити камеру. Перевірте дозволи.';
+                alert("Не вдалося запустити камеру. Перевірте дозволи браузера.");
             }
         }
 
         async function startStream(deviceId) {
             stopStreamOnly();
+            currentDeviceId = deviceId || '';
             torchOn = false;
             clearHighlightedCode();
-            const aimBox = document.getElementById('aim-box');
-            aimBox.style.left = '50%';
-            aimBox.style.top = '50%';
-            document.getElementById('camera-placeholder').style.display = 'none';
-            aimBox.classList.remove('hidden');
 
-            const constraints = {
-                video: {
+            document.getElementById('camera-placeholder').style.display = 'none';
+            document.getElementById('aim-box').classList.remove('hidden');
+
+            // Збалансована роздільність та плавний frameRate для Android / OnePlus 15
+            const videoConstraints = osProfile === 'android'
+                ? {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    facingMode: deviceId ? undefined : 'environment',
+                    width: { ideal: 960, max: 1280 },
+                    height: { ideal: 540, max: 720 },
+                    frameRate: { ideal: 30, max: 30 }
+                }
+                : {
                     deviceId: deviceId ? { exact: deviceId } : undefined,
                     facingMode: deviceId ? undefined : 'environment',
                     width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: false
-            };
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30, max: 30 }
+                };
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: videoConstraints,
+                    audio: false
+                });
                 currentStream = stream;
                 const video = document.getElementById('video');
                 video.srcObject = stream;
@@ -1462,60 +477,118 @@
                 }
 
                 isScanning = true;
-                scanLoop();
+                lastDecodeTime = 0;
+                rafId = requestAnimationFrame(scanFrame);
             } catch (err) {
                 document.getElementById('camera-placeholder').style.display = 'flex';
-                aimBox.classList.add('hidden');
+                document.getElementById('aim-box').classList.add('hidden');
             }
         }
 
-        function captureAimBoxToCanvas(video, aimBoxEl, canvas) {
+        function handleVideoTap(event) {
+            const container = document.getElementById('reader-container');
+            const aimBox = document.getElementById('aim-box');
+            if (!aimBox || aimBox.classList.contains('hidden')) return;
+
+            const rect = container.getBoundingClientRect();
+            const tapX = event.clientX - rect.left;
+            const tapY = event.clientY - rect.top;
+
+            const boxW = aimBox.offsetWidth;
+            const boxH = aimBox.offsetHeight;
+
+            const clampedLeft = Math.max(0, Math.min(rect.width - boxW, tapX - boxW / 2));
+            const clampedTop = Math.max(0, Math.min(rect.height - boxH, tapY - boxH / 2));
+
+            aimBox.style.left = `${clampedLeft}px`;
+            aimBox.style.top = `${clampedTop}px`;
+
+            aimCenterX = Math.max(0.05, Math.min(0.95, tapX / rect.width));
+            aimCenterY = Math.max(0.05, Math.min(0.95, tapY / rect.height));
+
+            // Кільце фокусу
+            const ring = document.getElementById('focus-ring');
+            ring.style.left = `${tapX}px`;
+            ring.style.top = `${tapY}px`;
+            ring.classList.remove('hidden');
+            setTimeout(() => ring.classList.add('hidden'), 550);
+
+            // Спроба точкового фокусування
+            if (currentStream) {
+                const track = currentStream.getVideoTracks()[0];
+                if (track && track.applyConstraints) {
+                    const caps = track.getCapabilities ? track.getCapabilities() : {};
+                    const adv = [];
+                    if (Array.isArray(caps.focusMode)) {
+                        if (caps.focusMode.includes('continuous')) {
+                            adv.push({ focusMode: 'continuous', pointsOfInterest: [{ x: aimCenterX, y: aimCenterY }] });
+                        } else if (caps.focusMode.includes('single-shot')) {
+                            adv.push({ focusMode: 'single-shot', pointsOfInterest: [{ x: aimCenterX, y: aimCenterY }] });
+                        }
+                    }
+                    if (adv.length) {
+                        track.applyConstraints({ advanced: adv }).catch(() => {});
+                    }
+                }
+            }
+        }
+
+        function drawAimCropToCanvas(video, canvas, maxSide) {
+            const container = document.getElementById('reader-container');
+            const aimBox = document.getElementById('aim-box');
+
             const vw = video.videoWidth;
             const vh = video.videoHeight;
-            const rect = video.getBoundingClientRect();
-            const boxRect = aimBoxEl.getBoundingClientRect();
+            const cw = container.clientWidth || vw;
+            const ch = container.clientHeight || vh;
 
-            if (!vw || !vh || !rect.width || !rect.height || !boxRect.width || !boxRect.height) {
-                return false;
-            }
-
+            // Враховуємо object-cover
             const videoAspect = vw / vh;
-            const elemAspect = rect.width / rect.height;
-
+            const boxAspect = cw / ch;
             let renderW, renderH, offsetX, offsetY;
-            if (videoAspect > elemAspect) {
-                renderH = rect.height;
-                renderW = renderH * videoAspect;
-                offsetX = (rect.width - renderW) / 2;
+
+            if (videoAspect > boxAspect) {
+                renderH = ch;
+                renderW = ch * videoAspect;
+                offsetX = (cw - renderW) / 2;
                 offsetY = 0;
             } else {
-                renderW = rect.width;
-                renderH = renderW / videoAspect;
+                renderW = cw;
+                renderH = cw / videoAspect;
                 offsetX = 0;
-                offsetY = (rect.height - renderH) / 2;
+                offsetY = (ch - renderH) / 2;
             }
 
-            const relLeft = Math.max(0, (boxRect.left - rect.left - offsetX) / renderW);
-            const relTop = Math.max(0, (boxRect.top - rect.top - offsetY) / renderH);
-            const relWidth = Math.min(1 - relLeft, boxRect.width / renderW);
-            const relHeight = Math.min(1 - relTop, boxRect.height / renderH);
+            const boxLeft = aimBox.offsetLeft;
+            const boxTop = aimBox.offsetTop;
+            const boxW = aimBox.offsetWidth;
+            const boxH = aimBox.offsetHeight;
 
-            const sx = Math.floor(relLeft * vw);
-            const sy = Math.floor(relTop * vh);
-            const sw = Math.max(1, Math.floor(relWidth * vw));
-            const sh = Math.max(1, Math.floor(relHeight * vh));
+            const sx = Math.max(0, Math.min(vw - 1, ((boxLeft - offsetX) / renderW) * vw));
+            const sy = Math.max(0, Math.min(vh - 1, ((boxTop - offsetY) / renderH) * vh));
+            const sw = Math.max(10, Math.min(vw - sx, (boxW / renderW) * vw));
+            const sh = Math.max(10, Math.min(vh - sy, (boxH / renderH) * vh));
 
-            const maxDim = osProfile === 'android' ? 720 : 960;
-            const scale = Math.min(1, maxDim / Math.max(sw, sh));
+            const scale = Math.min(1, maxSide / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
             canvas.height = Math.max(1, Math.floor(sh * scale));
 
-            const ctx = canvas.getContext('2d', { willReadFrequently: osProfile === 'ios' });
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-            return true;
+            return canvas;
         }
 
-        function decodeBarcodeWithZXing(canvas) {
+        async function decodeCanvas(canvas) {
+            // На Android пріоритетно використовуємо апаратний BarcodeDetector
+            if (osProfile === 'android' && nativeBarcodeDetector) {
+                try {
+                    const barcodes = await nativeBarcodeDetector.detect(canvas);
+                    if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                        return barcodes[0].rawValue;
+                    }
+                } catch (e) {}
+            }
+
             try {
                 const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
                 const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
@@ -1526,52 +599,41 @@
             }
         }
 
-        async function decodeBarcodeSmart(canvas) {
-            if (osProfile === 'android' && nativeDetector) {
-                try {
-                    const barcodes = await nativeDetector.detect(canvas);
-                    if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-                        return barcodes[0].rawValue;
-                    }
-                    return null;
-                } catch (e) {
-                    return decodeBarcodeWithZXing(canvas);
+        function scanFrame(now) {
+            if (!isScanning) return;
+
+            const intervalMs = osProfile === 'android' ? 190 : 160;
+            if (!isDecodingFrame && (now - lastDecodeTime) >= intervalMs) {
+                const video = document.getElementById('video');
+                if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                    isDecodingFrame = true;
+                    lastDecodeTime = now;
+
+                    const canvas = document.getElementById('scan-canvas');
+                    const maxSide = osProfile === 'android' ? 640 : 800;
+                    drawAimCropToCanvas(video, canvas, maxSide);
+
+                    decodeCanvas(canvas)
+                        .then(decoded => {
+                            if (decoded && decoded.trim()) {
+                                handleDetectedCode(decoded);
+                            }
+                        })
+                        .finally(() => {
+                            isDecodingFrame = false;
+                        });
                 }
             }
-            return decodeBarcodeWithZXing(canvas);
+
+            rafId = requestAnimationFrame(scanFrame);
         }
 
-        function cleanOcrText(raw) {
-            if (!raw) return '';
-            const allowedPattern = ocrLang === 'eng'
-                ? /[^A-Za-z0-9\s\-_./]/g
-                : ocrLang === 'ukr'
-                    ? /[^А-Яа-яІіЇїЄєҐґ0-9\s\-_./]/g
-                    : /[^\p{L}\p{N}\s\-_./]/gu;
-
-            const lines = raw
-                .split(/\r?\n/)
-                .map(line => line.replace(allowedPattern, ' ').replace(/\s+/g, ' ').trim())
-                .filter(line => line.length >= 2);
-            if (lines.length === 0) return '';
-            lines.sort((a, b) => b.length - a.length);
-            return lines[0].slice(0, 80);
-        }
-
-        async function recognizeTextFromCanvas(canvas) {
-            const worker = await getOcrWorker();
-            if (!worker) return null;
-            const { data } = await worker.recognize(canvas);
-            return cleanOcrText(data && data.text ? data.text : '');
-        }
-
-        function handleDetectedCode(rawCode, sourceLabel = 'код/текст') {
+        function handleDetectedCode(rawCode) {
             const code = rawCode.trim();
             if (!code) return;
 
             if (scanMode === 'manual') {
-                if (isEditingHighlight) return;
-                setHighlightedCode(code, sourceLabel);
+                setHighlightedCode(code);
             } else {
                 const now = Date.now();
                 if (code === lastAutoCode && (now - lastAutoTime) < 1500) {
@@ -1583,7 +645,7 @@
                 const pill = document.getElementById('detected-pill');
                 document.getElementById('detected-pill-text').innerText = code;
                 pill.classList.remove('hidden');
-                setTimeout(() => pill.classList.add('hidden'), 800);
+                setTimeout(() => pill.classList.add('hidden'), 700);
 
                 playBeep();
                 if (navigator.vibrate) navigator.vibrate(100);
@@ -1591,82 +653,11 @@
             }
         }
 
-        async function scanLoop() {
-            if (!isScanning) return;
-
-            const video = document.getElementById('video');
-            const aimBox = document.getElementById('aim-box');
-
-            if (!isDecodeBusy && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                isDecodeBusy = true;
-                try {
-                    const canvas = document.getElementById('scan-canvas');
-                    const captured = captureAimBoxToCanvas(video, aimBox, canvas);
-
-                    if (captured) {
-                        const allowOcr = scanFlow === 'two_steps' && currentStep === 1;
-
-                        if (inputType === 'barcode' || inputType === 'both') {
-                            const decodedBarcode = await decodeBarcodeSmart(canvas);
-                            if (decodedBarcode && decodedBarcode.trim()) {
-                                handleDetectedCode(decodedBarcode, 'ШК або QR у рамці');
-                            } else if (inputType === 'both' && allowOcr && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
-                                isOcrBusy = true;
-                                lastOcrTime = Date.now();
-                                recognizeTextFromCanvas(canvas)
-                                    .then(text => {
-                                        if (text && isScanning && scanFlow === 'two_steps' && currentStep === 1 && inputType === 'both') {
-                                            handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
-                                        }
-                                    })
-                                    .catch(() => {})
-                                    .finally(() => {
-                                        isOcrBusy = false;
-                                    });
-                            }
-                        } else if (inputType === 'ocr' && allowOcr && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
-                            isOcrBusy = true;
-                            lastOcrTime = Date.now();
-                            recognizeTextFromCanvas(canvas)
-                                .then(text => {
-                                    if (text && isScanning && scanFlow === 'two_steps' && currentStep === 1 && inputType === 'ocr') {
-                                        handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
-                                    }
-                                })
-                                .catch(() => {})
-                                .finally(() => {
-                                    isOcrBusy = false;
-                                });
-                        }
-                    }
-                } finally {
-                    isDecodeBusy = false;
-                }
-            }
-
-            const intervalMs = osProfile === 'android' ? 220 : 160;
-            scanLoopId = setTimeout(scanLoop, intervalMs);
-        }
-
-        function handleHighlightEdit(val) {
-            highlightedCode = val.trim();
-            const hasValue = highlightedCode.length > 0;
-            document.getElementById('btn-confirm-code').disabled = !hasValue;
-            document.getElementById('btn-clear-highlight').disabled = !hasValue;
-            if (hasValue) {
-                document.getElementById('confirm-status').innerText = 'Готово до фіксації — натисніть «Зафіксувати»';
-                document.getElementById('confirm-status').className = 'text-xs text-indigo-700 font-semibold';
-            } else {
-                document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку чи вставте скопійоване';
-                document.getElementById('confirm-status').className = 'text-xs text-amber-700';
-            }
-        }
-
-        function setHighlightedCode(code, sourceLabel = 'Виділено') {
+        function setHighlightedCode(code) {
             highlightedCode = code;
-            document.getElementById('highlighted-code').value = code;
-            document.getElementById('confirm-status').innerText = `${sourceLabel} — натисніть «Зафіксувати»`;
-            document.getElementById('confirm-status').className = 'text-xs text-emerald-700 font-semibold';
+            document.getElementById('highlighted-code').innerText = code;
+            document.getElementById('confirm-status').innerText = 'Готово до фіксації';
+            document.getElementById('confirm-status').className = 'text-emerald-700 font-semibold';
             document.getElementById('btn-confirm-code').disabled = false;
             document.getElementById('btn-clear-highlight').disabled = false;
 
@@ -1681,10 +672,9 @@
 
         function clearHighlightedCode() {
             highlightedCode = '';
-            isEditingHighlight = false;
-            document.getElementById('highlighted-code').value = '';
-            document.getElementById('confirm-status').innerText = 'Помістіть код або назву в рамку чи вставте скопійоване';
-            document.getElementById('confirm-status').className = 'text-xs text-amber-700';
+            document.getElementById('highlighted-code').innerText = '—';
+            document.getElementById('confirm-status').innerText = 'Наведіть на код у рамці';
+            document.getElementById('confirm-status').className = 'text-amber-700';
             document.getElementById('btn-confirm-code').disabled = true;
             document.getElementById('btn-clear-highlight').disabled = true;
 
@@ -1696,12 +686,12 @@
         }
 
         function confirmHighlightedCode() {
-            const currentVal = document.getElementById('highlighted-code').value.trim();
-            if (!currentVal) return;
+            if (!highlightedCode) return;
+            const codeToSave = highlightedCode;
             playBeep();
             if (navigator.vibrate) navigator.vibrate(100);
             clearHighlightedCode();
-            processScannedValue(currentVal);
+            processScannedValue(codeToSave);
         }
 
         async function toggleTorch() {
@@ -1721,10 +711,10 @@
 
         function stopStreamOnly() {
             isScanning = false;
-            isDecodeBusy = false;
-            if (scanLoopId) {
-                clearTimeout(scanLoopId);
-                scanLoopId = null;
+            isDecodingFrame = false;
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
             }
             if (currentStream) {
                 currentStream.getTracks().forEach(t => t.stop());
@@ -1737,10 +727,37 @@
             clearHighlightedCode();
             document.getElementById('camera-placeholder').style.display = 'flex';
             document.getElementById('aim-box').classList.add('hidden');
-            document.getElementById('focus-reticle').classList.add('hidden');
             document.getElementById('btn-start-camera').classList.remove('hidden');
             document.getElementById('btn-stop-camera').classList.add('hidden');
             document.getElementById('btn-torch').classList.add('hidden');
+        }
+
+        function scanFromFile(e) {
+            if (!e.target.files || e.target.files.length === 0) return;
+            const file = e.target.files[0];
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const img = new Image();
+                img.onload = async function() {
+                    const canvas = document.getElementById('scan-canvas');
+                    const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+                    canvas.width = Math.floor(img.width * scale);
+                    canvas.height = Math.floor(img.height * scale);
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    const decoded = await decodeCanvas(canvas);
+                    if (decoded && decoded.trim()) {
+                        handleDetectedCode(decoded);
+                    } else {
+                        alert("Не вдалося розпізнати код на фото. Спробуйте зробити чіткіше фото або введіть вручну.");
+                    }
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
         }
 
         function handleManualSubmit() {
@@ -1752,251 +769,99 @@
         }
 
         function processScannedValue(value) {
-            const autoFillEl = document.getElementById('autofill-shk1-from-xls');
-            const canAutoFill = autoFillEl && autoFillEl.checked && xlsInventory.length > 0;
-
-            if (scanFlow === 'serial_only') {
-                const found = canAutoFill ? matchXlsRecord(value) : null;
-                tempShk1 = found && found.item && found.item.name ? found.item.name : '—';
-                finalizeBox(value);
-                return;
-            }
-
-            if (currentStep === 1) {
-                if (canAutoFill) {
-                    const found = matchXlsRecord(value);
-                    if (found && found.item && found.item.name) {
-                        tempShk1 = found.item.name;
-                        document.getElementById('val-shk1').innerText = tempShk1;
-                        finalizeBox(value);
-                        return;
-                    }
-                }
-
+            if (stepMode === 2 && currentStep === 1) {
                 tempShk1 = value;
                 document.getElementById('val-shk1').innerText = tempShk1;
                 document.getElementById('btn-undo-shk1').classList.remove('hidden');
                 currentStep = 2;
-                document.getElementById('step-indicator').innerText = pinShk1
-                    ? "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)"
-                    : "Крок 2 з 2: Заводський / Інв. №";
-                document.getElementById('badge-shk1').innerText = pinShk1 ? "📌 ШК1 закріплено" : "Очікування ШК2";
-                document.getElementById('badge-shk1').className = pinShk1
-                    ? "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium"
-                    : "text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium";
+                updateStepUI();
             } else {
-                finalizeBox(value);
+                const shk1Value = stepMode === 1 ? '—' : (tempShk1 || '—');
+                const shk2Value = value;
+                document.getElementById('val-shk2').innerText = shk2Value;
+
+                boxes.unshift({
+                    shk1: shk1Value,
+                    shk2: shk2Value,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                });
+
+                saveAndReset();
             }
         }
 
         function undoShk1() {
-            if (scanFlow === 'serial_only') return;
             currentStep = 1;
             tempShk1 = '';
             document.getElementById('val-shk1').innerText = 'не зчитано';
             document.getElementById('val-shk2').innerText = 'очікується...';
             document.getElementById('btn-undo-shk1').classList.add('hidden');
-            document.getElementById('step-indicator').innerText = "Крок 1 з 2: Назва / Модель";
-            document.getElementById('badge-shk1').innerText = "Очікування ШК1";
-            document.getElementById('badge-shk1').className = "text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium";
+            updateStepUI();
         }
 
         function saveAndReset() {
             localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
-            updateInventoryUI();
             renderBoxes();
 
+            currentStep = stepMode === 1 ? 2 : 1;
+            tempShk1 = '';
+            document.getElementById('val-shk1').innerText = 'не зчитано';
             document.getElementById('val-shk2').innerText = 'очікується...';
-
-            if (scanFlow === 'serial_only') {
-                currentStep = 2;
-                tempShk1 = '';
-                document.getElementById('btn-undo-shk1').classList.add('hidden');
-                document.getElementById('step-indicator').innerText = "Режим: Лише серійний / інв. №";
-                document.getElementById('badge-shk1').innerText = "Без назви (ШК1)";
-                document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
-                return;
-            }
-
-            if (pinShk1 && tempShk1) {
-                currentStep = 2;
-                document.getElementById('val-shk1').innerText = tempShk1;
-                document.getElementById('btn-undo-shk1').classList.remove('hidden');
-                document.getElementById('step-indicator').innerText = "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)";
-                document.getElementById('badge-shk1').innerText = "📌 ШК1 закріплено";
-                document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
-            } else {
-                currentStep = 1;
-                tempShk1 = '';
-                document.getElementById('val-shk1').innerText = 'не зчитано';
-                document.getElementById('btn-undo-shk1').classList.add('hidden');
-                document.getElementById('step-indicator').innerText = "Крок 1 з 2: Назва / Модель";
-                document.getElementById('badge-shk1').innerText = "Очікування ШК1";
-                document.getElementById('badge-shk1').className = "text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium";
-            }
-        }
-
-        function finalizeBox(tempShk2) {
-            document.getElementById('val-shk2').innerText = tempShk2;
-
-            boxes.unshift({
-                shk1: tempShk1 || '—',
-                shk2: tempShk2,
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            });
-
-            saveAndReset();
-        }
-
-        function getXlsBadgeHtml(box) {
-            if (!xlsInventory || xlsInventory.length === 0) return '';
-            const found = matchXlsRecord(box.shk2) || matchXlsRecord(box.shk1);
-            if (!found) {
-                return `<span class="inline-block text-[11px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">🟣 Надлишок (немає в описі)</span>`;
-            }
-            return `<span class="inline-block text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-medium">✅ Знайдено (${found.matchedBy})</span>`;
+            document.getElementById('btn-undo-shk1').classList.add('hidden');
+            updateStepUI();
         }
 
         function renderBoxes() {
             const container = document.getElementById('boxes-list');
             document.getElementById('box-count').innerText = boxes.length;
 
-            if (xlsInventory.length > 0 && currentListTab === 'missing') {
-                const summary = getReconciliationSummary();
-                if (summary.missingItems.length === 0) {
-                    container.innerHTML = `<div class="text-center text-emerald-600 py-8 text-sm font-medium">🎉 Усі позиції з опису знайдено!</div>`;
-                    return;
-                }
-                container.innerHTML = summary.missingItems.map(item => `
-                    <div class="bg-amber-50/70 border border-amber-200 p-3 rounded-lg flex justify-between items-start gap-2 text-sm">
-                        <div class="space-y-0.5">
-                            <div class="text-[11px] text-amber-700 font-medium">Опис #${item.rowNum}${item.groupName ? ` · ${item.groupName}` : ''}</div>
-                            <div><b>Назва:</b> <span class="text-slate-800">${item.name || 'не вказано'}</span></div>
-                            <div class="text-xs"><b>Заводський №:</b> <span class="font-mono text-amber-900 font-semibold">${item.serialNo || '—'}</span></div>
-                            <div class="text-xs"><b>Інв. № в SAP:</b> <span class="font-mono text-indigo-900 font-semibold">${item.sapInvNo || '—'}</span></div>
-                        </div>
-                        <span class="text-xs bg-amber-200/80 text-amber-900 px-2 py-1 rounded font-medium shrink-0">Нестача</span>
-                    </div>
-                `).join('');
-                return;
-            }
-
             if (boxes.length === 0) {
-                container.innerHTML = `<div id="empty-state" class="text-center text-slate-400 py-8 text-sm">Поки що порожньо</div>`;
+                container.innerHTML = `<div id="empty-state" class="text-center text-slate-400 py-6 text-sm">Поки що порожньо</div>`;
                 return;
             }
 
-            const serialCounts = new Map();
-            boxes.forEach(b => {
-                const key = (b.shk2 || '').trim().toLowerCase();
-                if (key) serialCounts.set(key, (serialCounts.get(key) || 0) + 1);
-            });
-
-            container.innerHTML = boxes.map((box, index) => {
-                const key = (box.shk2 || '').trim().toLowerCase();
-                const isDup = key && (serialCounts.get(key) || 0) > 1;
-                const cardClass = isDup
-                    ? "bg-rose-50/90 border-2 border-rose-300 p-3 rounded-lg flex justify-between items-center text-sm"
-                    : "bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm";
-                const dupBadge = isDup
-                    ? `<span class="inline-block text-[11px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-semibold">🔁 Дублікат (${serialCounts.get(key)})</span>`
-                    : '';
-
-                return `
-                    <div class="${cardClass}">
-                        <div class="space-y-0.5">
-                            <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-400 mb-0.5">
-                                <span>${box.time}</span>
-                                ${dupBadge}
-                                ${getXlsBadgeHtml(box)}
-                            </div>
-                            ${box.shk1 && box.shk1 !== '—' ? `<div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>` : ''}
-                            <div><b>Заводський / Інв. № (ШК2):</b> <span class="${isDup ? 'text-rose-700 font-bold' : 'text-emerald-700 font-semibold'} font-mono">${box.shk2}</span></div>
-                        </div>
-                        <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
-                            ✕
-                        </button>
+            container.innerHTML = boxes.map((box, index) => `
+                <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex justify-between items-center text-xs sm:text-sm">
+                    <div>
+                        <div class="text-[11px] text-slate-400 mb-0.5">${box.time}</div>
+                        <div><b>ШК1:</b> <span class="text-indigo-600">${box.shk1}</span></div>
+                        <div><b>ШК2:</b> <span class="text-emerald-700 font-semibold">${box.shk2}</span></div>
                     </div>
-                `;
-            }).join('');
+                    <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
+                        ✕
+                    </button>
+                </div>
+            `).join('');
         }
 
         function deleteBox(index) {
             boxes.splice(index, 1);
             localStorage.setItem('scanned_boxes', JSON.stringify(boxes));
-            updateInventoryUI();
             renderBoxes();
         }
 
         function clearHistory() {
-            if (confirm("Видалити всі збережені коробки?")) {
+            if (confirm("Видалити всі збережені записи?")) {
                 boxes = [];
                 localStorage.removeItem('scanned_boxes');
-                updateInventoryUI();
                 renderBoxes();
             }
         }
 
-        async function copyAllToClipboard() {
-            if (boxes.length === 0) {
-                document.getElementById('confirm-status').innerText = 'Список порожній — нічого копіювати';
-                return;
-            }
-
-            const lines = [
-                "ШК1 (Модель/Назва)\tШК2 (Заводський / Інв. №)\tЧас",
-                ...boxes.map(b => `${b.shk1}\t${b.shk2}\t${b.time}`)
-            ];
-            const text = lines.join("\n");
-
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(text);
-                } else {
-                    fallbackCopyText(text);
-                }
-            } catch (e) {
-                fallbackCopyText(text);
-            }
-
-            const btn = document.getElementById('btn-copy-all');
-            const originalText = btn.innerText;
-            btn.innerText = "✅ Скопійовано";
-            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
-            btn.classList.add('bg-emerald-600');
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.classList.remove('bg-emerald-600');
-                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
-            }, 1500);
-        }
-
-        function fallbackCopyText(text) {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.focus();
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-        }
-
         function exportToCSV() {
             if (boxes.length === 0) {
-                document.getElementById('confirm-status').innerText = 'Список порожній — немає даних для CSV';
+                alert("Список порожній!");
                 return;
             }
 
-            let csvContent = "\uFEFFШК1 (Модель/Назва),ШК2 (Заводський / Інв. №),Час\n" + 
+            const csvContent = "\uFEFFШК1 (Модель),ШК2 (Серійний номер),Час\n" +
                 boxes.map(b => `"${b.shk1}","${b.shk2}","${b.time}"`).join("\n");
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `boxes_scan_${new Date().toISOString().slice(0,10)}.csv`;
+            a.download = `boxes_scan_${new Date().toISOString().slice(0, 10)}.csv`;
             a.click();
             URL.revokeObjectURL(url);
         }
