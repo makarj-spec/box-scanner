@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 16:41)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 17:00)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +19,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 16:41
+                Версія: 2026-11-22 17:00
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -87,7 +87,7 @@
                 <span id="badge-shk1" class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">Очікування ШК1</span>
             </div>
 
-            <!-- Швидкий перемикач закріплення ШК1 вверху (ховається у режимі "Лише серійний №") -->
+            <!-- Швидкий перемикач закріплення ШК1 вверху -->
             <label id="pin-shk1-wrapper" class="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
                 <div class="pr-2">
                     <div class="text-xs font-bold text-indigo-950">📌 Закріпити ШК1 для партії</div>
@@ -387,7 +387,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 16:41";
+        const APP_VERSION = "2026-11-22 17:00";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -1751,12 +1751,6 @@
             input.value = '';
         }
 
-        function isDuplicateSerial(serial) {
-            const target = String(serial || '').trim().toLowerCase();
-            if (!target) return false;
-            return boxes.some(b => (b.shk2 || '').trim().toLowerCase() === target);
-        }
-
         function processScannedValue(value) {
             const autoFillEl = document.getElementById('autofill-shk1-from-xls');
             const canAutoFill = autoFillEl && autoFillEl.checked && xlsInventory.length > 0;
@@ -1892,7 +1886,6 @@
                 return;
             }
 
-            // Підраховуємо частоту кожного серійного/інвентарного номера для підсвічування дублікатів
             const serialCounts = new Map();
             boxes.forEach(b => {
                 const key = (b.shk2 || '').trim().toLowerCase();
