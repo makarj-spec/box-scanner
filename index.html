@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 16:20)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 16:41)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +19,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 16:20
+                Версія: 2026-11-22 16:41
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -95,25 +95,6 @@
                 </div>
                 <input type="checkbox" id="pin-shk1-toggle" onchange="togglePinShk1(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
             </label>
-
-            <!-- Попередження про дублікат ШК2 -->
-            <div id="duplicate-alert" class="hidden bg-rose-50 border-2 border-rose-400 rounded-xl p-3.5 space-y-2.5 text-rose-900">
-                <div class="flex items-start gap-2">
-                    <span class="text-lg leading-none">⚠️</span>
-                    <div class="text-xs space-y-1">
-                        <div class="font-bold text-sm text-rose-700">Дублікат серійного / інв. номера (ШК2)!</div>
-                        <div id="duplicate-details" class="text-rose-800"></div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button onclick="confirmDuplicateSave()" class="bg-rose-600 hover:bg-rose-700 text-white font-semibold py-2 px-3 rounded-lg transition text-xs">
-                        Все одно додати
-                    </button>
-                    <button onclick="cancelDuplicateSave()" class="bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 font-semibold py-2 px-3 rounded-lg transition text-xs">
-                        Скасувати ШК2
-                    </button>
-                </div>
-            </div>
 
             <!-- Модальне вікно вибору області на фото з галереї -->
             <div id="photo-crop-modal" class="hidden bg-slate-900 text-white rounded-xl p-4 space-y-3 border-2 border-indigo-400">
@@ -406,7 +387,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 16:20";
+        const APP_VERSION = "2026-11-22 16:41";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -418,7 +399,7 @@
         let scanLoopId = null;
         let isScanning = false;
         let currentStream = null;
-        let scanFlow = 'two_steps'; // 'two_steps' або 'serial_only'
+        let scanFlow = 'two_steps';
         let osProfile = 'android';
         let scanMode = 'manual';
         let inputType = 'both';
@@ -427,7 +408,6 @@
         let isEditingHighlight = false;
         let currentStep = 1;
         let tempShk1 = '';
-        let pendingDuplicateShk2 = '';
         let highlightedCode = '';
         let lastAutoCode = '';
         let lastAutoTime = 0;
@@ -1405,21 +1385,6 @@
             } catch (e) {}
         }
 
-        function playWarningBeep() {
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-                oscillator.type = 'sawtooth';
-                oscillator.frequency.setValueAtTime(260, audioCtx.currentTime);
-                gainNode.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 0.25);
-            } catch (e) {}
-        }
-
         async function initAndStartScanner() {
             try {
                 const tempStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
@@ -1601,7 +1566,6 @@
         }
 
         function handleDetectedCode(rawCode, sourceLabel = 'код/текст') {
-            if (pendingDuplicateShk2) return;
             const code = rawCode.trim();
             if (!code) return;
 
@@ -1787,51 +1751,19 @@
             input.value = '';
         }
 
-        function findExistingSerial(serial) {
-            const target = serial.trim().toLowerCase();
-            return boxes.find(b => (b.shk2 || '').trim().toLowerCase() === target) || null;
-        }
-
-        function showDuplicateWarning(serial, existingBox) {
-            pendingDuplicateShk2 = serial;
-            playWarningBeep();
-            document.getElementById('val-shk2').innerText = `${serial} (ДУБЛІКАТ)`;
-            document.getElementById('duplicate-details').innerHTML =
-                `Номер <b class="font-mono">${serial}</b> уже є у списку (модель/назва: <b>${existingBox.shk1}</b>, час: <b>${existingBox.time}</b>).`;
-            document.getElementById('duplicate-alert').classList.remove('hidden');
-        }
-
-        function hideDuplicateWarning() {
-            pendingDuplicateShk2 = '';
-            document.getElementById('duplicate-alert').classList.add('hidden');
-        }
-
-        function confirmDuplicateSave() {
-            if (!pendingDuplicateShk2) return;
-            const serial = pendingDuplicateShk2;
-            hideDuplicateWarning();
-            finalizeBox(serial);
-        }
-
-        function cancelDuplicateSave() {
-            hideDuplicateWarning();
-            document.getElementById('val-shk2').innerText = 'очікується...';
+        function isDuplicateSerial(serial) {
+            const target = String(serial || '').trim().toLowerCase();
+            if (!target) return false;
+            return boxes.some(b => (b.shk2 || '').trim().toLowerCase() === target);
         }
 
         function processScannedValue(value) {
-            if (pendingDuplicateShk2) return;
-
             const autoFillEl = document.getElementById('autofill-shk1-from-xls');
             const canAutoFill = autoFillEl && autoFillEl.checked && xlsInventory.length > 0;
 
             if (scanFlow === 'serial_only') {
                 const found = canAutoFill ? matchXlsRecord(value) : null;
                 tempShk1 = found && found.item && found.item.name ? found.item.name : '—';
-                const existing = findExistingSerial(value);
-                if (existing) {
-                    showDuplicateWarning(value, existing);
-                    return;
-                }
                 finalizeBox(value);
                 return;
             }
@@ -1840,13 +1772,8 @@
                 if (canAutoFill) {
                     const found = matchXlsRecord(value);
                     if (found && found.item && found.item.name) {
-                        const existing = findExistingSerial(value);
                         tempShk1 = found.item.name;
                         document.getElementById('val-shk1').innerText = tempShk1;
-                        if (existing) {
-                            showDuplicateWarning(value, existing);
-                            return;
-                        }
                         finalizeBox(value);
                         return;
                     }
@@ -1864,17 +1791,11 @@
                     ? "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium"
                     : "text-xs bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full font-medium";
             } else {
-                const existing = findExistingSerial(value);
-                if (existing) {
-                    showDuplicateWarning(value, existing);
-                    return;
-                }
                 finalizeBox(value);
             }
         }
 
         function undoShk1() {
-            hideDuplicateWarning();
             if (scanFlow === 'serial_only') return;
             currentStep = 1;
             tempShk1 = '';
@@ -1971,21 +1892,40 @@
                 return;
             }
 
-            container.innerHTML = boxes.map((box, index) => `
-                <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm">
-                    <div class="space-y-0.5">
-                        <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-400 mb-0.5">
-                            <span>${box.time}</span>
-                            ${getXlsBadgeHtml(box)}
+            // Підраховуємо частоту кожного серійного/інвентарного номера для підсвічування дублікатів
+            const serialCounts = new Map();
+            boxes.forEach(b => {
+                const key = (b.shk2 || '').trim().toLowerCase();
+                if (key) serialCounts.set(key, (serialCounts.get(key) || 0) + 1);
+            });
+
+            container.innerHTML = boxes.map((box, index) => {
+                const key = (box.shk2 || '').trim().toLowerCase();
+                const isDup = key && (serialCounts.get(key) || 0) > 1;
+                const cardClass = isDup
+                    ? "bg-rose-50/90 border-2 border-rose-300 p-3 rounded-lg flex justify-between items-center text-sm"
+                    : "bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm";
+                const dupBadge = isDup
+                    ? `<span class="inline-block text-[11px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-semibold">🔁 Дублікат (${serialCounts.get(key)})</span>`
+                    : '';
+
+                return `
+                    <div class="${cardClass}">
+                        <div class="space-y-0.5">
+                            <div class="flex flex-wrap items-center gap-1.5 text-xs text-slate-400 mb-0.5">
+                                <span>${box.time}</span>
+                                ${dupBadge}
+                                ${getXlsBadgeHtml(box)}
+                            </div>
+                            ${box.shk1 && box.shk1 !== '—' ? `<div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>` : ''}
+                            <div><b>Заводський / Інв. № (ШК2):</b> <span class="${isDup ? 'text-rose-700 font-bold' : 'text-emerald-700 font-semibold'} font-mono">${box.shk2}</span></div>
                         </div>
-                        ${box.shk1 && box.shk1 !== '—' ? `<div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>` : ''}
-                        <div><b>Заводський / Інв. № (ШК2):</b> <span class="text-emerald-700 font-mono">${box.shk2}</span></div>
+                        <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
+                            ✕
+                        </button>
                     </div>
-                    <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
-                        ✕
-                    </button>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function deleteBox(index) {
