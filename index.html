@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-22 13:45)</title>
+    <title>Сканер коробок (v2026-11-22 14:09)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 13:45
+                Версія: 2026-11-22 14:09
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -114,8 +114,10 @@
                 </div>
             </div>
 
-            <!-- Вікно камери -->
-            <div id="reader-container" class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center">
+            <!-- Вікно камери з підтримкою фокусування та переміщення зони дотиком -->
+            <div id="reader-container"
+                 onpointerdown="handleVideoTapFocus(event)"
+                 class="relative overflow-hidden rounded-lg bg-black aspect-[4/3] flex items-center justify-center touch-none select-none cursor-crosshair">
                 <video id="video" playsinline muted autoplay class="w-full h-full object-cover"></video>
                 <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 p-4 text-center bg-slate-900">
                     <svg class="w-12 h-12 mb-2 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,11 +126,12 @@
                     </svg>
                     <span class="text-sm">Натисніть «Увімкнути камеру»</span>
                 </div>
-                <div id="aim-box" style="width: 84%; height: 48%;" class="hidden pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-colors duration-150">
+                <div id="aim-box" style="width: 84%; height: 48%; left: 50%; top: 50%;" class="hidden pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 border-2 border-amber-300/90 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] transition-[border-color,width,height] duration-150">
                     <span class="absolute -top-5 left-1 bg-black/75 text-amber-200 text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
-                        ЗОНА СКАНУВАННЯ
+                        ЗОНА СКАНУВАННЯ · ДОТИК = ФОКУС
                     </span>
                 </div>
+                <div id="focus-reticle" class="hidden pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-2 border-amber-300 ring-2 ring-amber-300/30 animate-ping"></div>
                 <div id="detected-pill" class="hidden pointer-events-none absolute bottom-2.5 inset-x-2.5 bg-emerald-600/95 text-white text-center py-1.5 px-3 rounded-lg text-xs font-mono font-bold shadow">
                     Виділено: <span id="detected-pill-text"></span>
                 </div>
@@ -312,7 +315,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 13:45";
+        const APP_VERSION = "2026-11-22 14:09";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -342,6 +345,7 @@
         let cropState = { leftPct: 15, topPct: 32.5, widthPct: 70, heightPct: 35 };
         let photoRotationDeg = 0;
         let dragState = null;
+        let focusIndicatorTimeout = null;
 
         function createReader() {
             const hints = new Map();
@@ -451,6 +455,69 @@
             window.addEventListener('pointerup', onCropDragEnd);
             window.addEventListener('pointercancel', onCropDragEnd);
         };
+
+        // Дотик по відео: переміщує зону сканування у точку дотику та запускає фокусування там
+        async function handleVideoTapFocus(e) {
+            if (!isScanning || !currentStream) return;
+            const container = document.getElementById('reader-container');
+            const aimBox = document.getElementById('aim-box');
+            const reticle = document.getElementById('focus-reticle');
+            const rect = container.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const tapX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+            const tapY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+
+            const boxW = aimBox.offsetWidth || rect.width * 0.84;
+            const boxH = aimBox.offsetHeight || rect.height * 0.48;
+
+            const clampedX = Math.max(boxW / 2, Math.min(rect.width - boxW / 2, tapX));
+            const clampedY = Math.max(boxH / 2, Math.min(rect.height - boxH / 2, tapY));
+
+            const leftPct = (clampedX / rect.width) * 100;
+            const topPct = (clampedY / rect.height) * 100;
+
+            aimBox.style.left = `${leftPct}%`;
+            aimBox.style.top = `${topPct}%`;
+
+            // Візуальне кільце фокусу у точці дотику
+            reticle.style.left = `${(tapX / rect.width) * 100}%`;
+            reticle.style.top = `${(tapY / rect.height) * 100}%`;
+            reticle.classList.remove('hidden');
+            clearTimeout(focusIndicatorTimeout);
+            focusIndicatorTimeout = setTimeout(() => {
+                reticle.classList.add('hidden');
+            }, 650);
+
+            // Спроба апаратного фокусування у вибраній точці
+            const track = currentStream.getVideoTracks()[0];
+            if (track && track.applyConstraints) {
+                const normX = Math.max(0, Math.min(1, tapX / rect.width));
+                const normY = Math.max(0, Math.min(1, tapY / rect.height));
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+
+                const advanced = [];
+                if (caps.pointsOfInterest) {
+                    advanced.push({ pointsOfInterest: [{ x: normX, y: normY }] });
+                }
+                if (caps.focusMode && Array.isArray(caps.focusMode)) {
+                    if (caps.focusMode.includes('single-shot')) {
+                        advanced.push({ focusMode: 'single-shot' });
+                    } else if (caps.focusMode.includes('continuous')) {
+                        advanced.push({ focusMode: 'continuous' });
+                    }
+                }
+
+                if (advanced.length > 0) {
+                    try {
+                        await track.applyConstraints({ advanced });
+                    } catch (err) {}
+                }
+            }
+
+            // Прискорюємо наступну перевірку кадру в точці сканування
+            lastOcrTime = 0;
+        }
 
         function setOsProfile(profile) {
             osProfile = profile;
@@ -703,6 +770,9 @@
         function resetAimBoxSize() {
             document.getElementById('aim-w-slider').value = 84;
             document.getElementById('aim-h-slider').value = 48;
+            const aimBox = document.getElementById('aim-box');
+            aimBox.style.left = '50%';
+            aimBox.style.top = '50%';
             updateAimBoxSize();
         }
 
@@ -862,8 +932,11 @@
             stopStreamOnly();
             torchOn = false;
             clearHighlightedCode();
+            const aimBox = document.getElementById('aim-box');
+            aimBox.style.left = '50%';
+            aimBox.style.top = '50%';
             document.getElementById('camera-placeholder').style.display = 'none';
-            document.getElementById('aim-box').classList.remove('hidden');
+            aimBox.classList.remove('hidden');
 
             const constraints = {
                 video: {
@@ -897,7 +970,7 @@
                 scanLoop();
             } catch (err) {
                 document.getElementById('camera-placeholder').style.display = 'flex';
-                document.getElementById('aim-box').classList.add('hidden');
+                aimBox.classList.add('hidden');
             }
         }
 
@@ -1157,6 +1230,7 @@
             clearHighlightedCode();
             document.getElementById('camera-placeholder').style.display = 'flex';
             document.getElementById('aim-box').classList.add('hidden');
+            document.getElementById('focus-reticle').classList.add('hidden');
             document.getElementById('btn-start-camera').classList.remove('hidden');
             document.getElementById('btn-stop-camera').classList.add('hidden');
             document.getElementById('btn-torch').classList.add('hidden');
