@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок (v2026-11-19 19:07)</title>
+    <title>Сканер коробок (v2026-11-22 13:45)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -18,7 +18,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель (код або текст) · ШК2 → Серійний номер</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-19 19:07
+                Версія: 2026-11-22 13:45
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -28,11 +28,21 @@
 
     <main class="flex-grow container mx-auto p-4 max-w-xl space-y-5">
 
+        <!-- Основна робоча картка сканера -->
         <div class="bg-white rounded-xl shadow-md p-5 space-y-4">
             <div class="flex justify-between items-center border-b pb-3">
                 <span id="step-indicator" class="font-semibold text-indigo-600 text-base">Крок 1 з 2: Назва / Модель</span>
                 <span id="badge-shk1" class="text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium">Очікування ШК1</span>
             </div>
+
+            <!-- Швидкий перемикач закріплення ШК1 вверху -->
+            <label class="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
+                <div class="pr-2">
+                    <div class="text-xs font-bold text-indigo-950">📌 Закріпити ШК1 для партії</div>
+                    <div class="text-[11px] text-indigo-700">Не скидати модель/назву після збереження коробки</div>
+                </div>
+                <input type="checkbox" id="pin-shk1-toggle" onchange="togglePinShk1(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
+            </label>
 
             <!-- Попередження про дублікат ШК2 -->
             <div id="duplicate-alert" class="hidden bg-rose-50 border-2 border-rose-400 rounded-xl p-3.5 space-y-2.5 text-rose-900">
@@ -51,74 +61,6 @@
                         Скасувати ШК2
                     </button>
                 </div>
-            </div>
-
-            <!-- Перемикач профілю ОС: Android / iOS -->
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                <div class="flex items-center justify-between text-[11px] font-semibold text-slate-500 uppercase">
-                    <span>📱 Профіль сканування (ОС):</span>
-                    <span id="os-engine-hint" class="text-emerald-700 normal-case font-medium">Апаратний рушій (плавне відео)</span>
-                </div>
-                <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                    <button id="os-btn-android" onclick="setOsProfile('android')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm">
-                        🤖 Android (Плавний)
-                    </button>
-                    <button id="os-btn-ios" onclick="setOsProfile('ios')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
-                        🍎 iOS (Сумісний)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Перемикач режиму підтвердження: Ручний / Авто -->
-            <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                <button id="mode-btn-manual" onclick="setScanMode('manual')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                    ✋ Ручний режим
-                </button>
-                <button id="mode-btn-auto" onclick="setScanMode('auto')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                    ⚡ Автосканування
-                </button>
-            </div>
-
-            <!-- Перемикач типу зчитування: ШК+Текст / Лише Текст (OCR) -->
-            <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                <button id="input-type-both" onclick="setInputType('both')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                    🔍 Код або Текст
-                </button>
-                <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                    🔤 Лише Текст (OCR)
-                </button>
-            </div>
-
-            <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                <div class="text-[11px] font-semibold text-slate-500 uppercase">Мова розпізнавання тексту (OCR):</div>
-                <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
-                    <button id="ocr-lang-eng" onclick="setOcrLang('eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                        🔤 Латиниця (EN)
-                    </button>
-                    <button id="ocr-lang-ukr" onclick="setOcrLang('ukr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
-                        🇺🇦 Кирилиця (UK)
-                    </button>
-                    <button id="ocr-lang-both" onclick="setOcrLang('ukr+eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                        🌐 Обидві (UK+EN)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Перемикач фіксації ШК1 для партії однакових коробок -->
-            <label class="flex items-center justify-between bg-indigo-50/70 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
-                <div class="pr-2">
-                    <div class="text-xs font-bold text-indigo-950">📌 Закріпити ШК1 для партії</div>
-                    <div class="text-[11px] text-indigo-700">Не скидати модель/назву після збереження коробки</div>
-                </div>
-                <input type="checkbox" id="pin-shk1-toggle" onchange="togglePinShk1(this.checked)" class="w-4 h-4 accent-indigo-600 rounded">
-            </label>
-
-            <!-- Вибір камери -->
-            <div id="camera-select-wrapper" class="hidden space-y-1">
-                <label for="camera-select" class="block text-xs font-semibold text-slate-500 uppercase">Оберіть об'єктив камери:</label>
-                <select id="camera-select" onchange="switchCamera()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                </select>
             </div>
 
             <!-- Модальне вікно вибору області на фото з галереї -->
@@ -294,13 +236,83 @@
             </div>
         </div>
 
+        <!-- Згортаний блок налаштувань у кінці сторінки -->
+        <details id="settings-section" class="bg-white rounded-xl shadow-md border border-slate-200 group">
+            <summary class="list-none cursor-pointer p-4 flex items-center justify-between font-bold text-sm text-slate-700 select-none">
+                <span>⚙️ Налаштування сканера</span>
+                <span class="text-xs font-normal text-slate-400 group-open:hidden">Розгорнути ▾</span>
+                <span class="text-xs font-normal text-slate-400 hidden group-open:inline">Згорнути ▴</span>
+            </summary>
+
+            <div class="px-5 pb-5 pt-1 space-y-4 border-t border-slate-100">
+                <!-- Профіль ОС: Android / iOS -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 uppercase">
+                        <span>📱 Профіль сканування (ОС):</span>
+                        <span id="os-engine-hint" class="text-emerald-700 normal-case font-medium text-right">Апаратний рушій (плавне відео)</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="os-btn-android" onclick="setOsProfile('android')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm">
+                            🤖 Android (Плавний)
+                        </button>
+                        <button id="os-btn-ios" onclick="setOsProfile('ios')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
+                            🍎 iOS (Сумісний)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Перемикач режиму підтвердження: Ручний / Авто -->
+                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
+                    <button id="mode-btn-manual" onclick="setScanMode('manual')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                        ✋ Ручний режим
+                    </button>
+                    <button id="mode-btn-auto" onclick="setScanMode('auto')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
+                        ⚡ Автосканування
+                    </button>
+                </div>
+
+                <!-- Перемикач типу зчитування: ШК+Текст / Лише Текст (OCR) -->
+                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
+                    <button id="input-type-both" onclick="setInputType('both')" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                        🔍 Код або Текст
+                    </button>
+                    <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
+                        🔤 Лише Текст (OCR)
+                    </button>
+                </div>
+
+                <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Мова розпізнавання тексту (OCR):</div>
+                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="ocr-lang-eng" onclick="setOcrLang('eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔤 Латиниця (EN)
+                        </button>
+                        <button id="ocr-lang-ukr" onclick="setOcrLang('ukr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🇺🇦 Кирилиця (UK)
+                        </button>
+                        <button id="ocr-lang-both" onclick="setOcrLang('ukr+eng')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            🌐 Обидві (UK+EN)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Вибір камери -->
+                <div id="camera-select-wrapper" class="hidden space-y-1">
+                    <label for="camera-select" class="block text-xs font-semibold text-slate-500 uppercase">Оберіть об'єктив камери:</label>
+                    <select id="camera-select" onchange="switchCamera()" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </select>
+                </div>
+            </div>
+        </details>
+
     </main>
 
     <canvas id="scan-canvas" class="hidden"></canvas>
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-19 19:07";
+        const APP_VERSION = "2026-11-22 13:45";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -312,10 +324,10 @@
         let scanLoopId = null;
         let isScanning = false;
         let currentStream = null;
-        let osProfile = 'android'; // 'android' (апаратний BarcodeDetector + нижче навантаження) або 'ios' (ZXing JS)
-        let scanMode = 'manual'; // 'manual' або 'auto'
-        let inputType = 'both'; // 'both' (код або текст) або 'ocr' (лише текст)
-        let ocrLang = 'ukr+eng'; // 'eng', 'ukr', 'ukr+eng'
+        let osProfile = 'android';
+        let scanMode = 'manual';
+        let inputType = 'both';
+        let ocrLang = 'ukr+eng';
         let pinShk1 = false;
         let isEditingHighlight = false;
         let currentStep = 1;
@@ -398,7 +410,6 @@
             codeReader = createReader();
             initNativeDetector();
 
-            // Автовизначення профілю ОС або відновлення збереженого вибору
             const savedOs = localStorage.getItem('scan_os_profile');
             if (savedOs === 'android' || savedOs === 'ios') {
                 setOsProfile(savedOs);
@@ -455,12 +466,12 @@
                 hint.innerText = nativeDetector
                     ? "Апаратний BarcodeDetector (60 FPS без лагів)"
                     : "Оптимізований цикл (знижене навантаження CPU)";
-                hint.className = "text-emerald-700 normal-case font-medium";
+                hint.className = "text-emerald-700 normal-case font-medium text-right";
             } else {
                 iosBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
                 androidBtn.className = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
                 hint.innerText = "ZXing JS рушій (для iPhone / Safari)";
-                hint.className = "text-indigo-700 normal-case font-medium";
+                hint.className = "text-indigo-700 normal-case font-medium text-right";
             }
         }
 
@@ -926,7 +937,6 @@
             const sw = Math.max(1, Math.floor(relWidth * vw));
             const sh = Math.max(1, Math.floor(relHeight * vh));
 
-            // На Android при апаратному декодері вистачає 720px без важкого перемасштабування
             const maxDim = osProfile === 'android' ? 720 : 960;
             const scale = Math.min(1, maxDim / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
@@ -948,7 +958,6 @@
             }
         }
 
-        // У профілі Android спершу використовується апаратний BarcodeDetector (не гальмує UI)
         async function decodeBarcodeSmart(canvas) {
             if (osProfile === 'android' && nativeDetector) {
                 try {
