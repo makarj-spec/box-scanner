@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 18:45)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-22 17:00 Opt)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +19,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-22 18:45
+                Версія: 2026-11-22 17:00-opt
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -88,7 +88,7 @@
             </div>
 
             <!-- Швидкий перемикач закріплення ШК1 вверху -->
-            <label class="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
+            <label id="pin-shk1-wrapper" class="flex items-center justify-between bg-indigo-50/80 border border-indigo-200 rounded-xl px-3.5 py-2.5 cursor-pointer select-none">
                 <div class="pr-2">
                     <div class="text-xs font-bold text-indigo-950">📌 Закріпити ШК1 для партії</div>
                     <div class="text-[11px] text-indigo-700">Не скидати модель/назву після збереження коробки</div>
@@ -241,16 +241,16 @@
 
             <!-- Ручне введення -->
             <div class="pt-2 border-t space-y-2">
-                <label class="block text-xs font-semibold text-slate-500 uppercase">Або ввести назву / код вручну:</label>
+                <label class="block text-xs font-semibold text-slate-500 uppercase">Або ввести значення вручну:</label>
                 <div class="flex gap-2">
-                    <input type="text" id="manual-input" onkeydown="if(event.key==='Enter') handleManualSubmit()" placeholder="Введіть назву або код..." class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" id="manual-input" onkeydown="if(event.key==='Enter') handleManualSubmit()" placeholder="Введіть серійний номер або назву..." class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <button onclick="handleManualSubmit()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">ОК</button>
                 </div>
             </div>
 
             <!-- Поточний буфер + скасування ШК1 -->
             <div id="current-buffer" class="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs space-y-2 text-slate-600">
-                <div id="row-shk1" class="flex items-center justify-between gap-2">
+                <div id="shk1-buffer-row" class="flex items-center justify-between gap-2">
                     <div><b>ШК1 (Модель/Назва):</b> <span id="val-shk1" class="text-indigo-600 font-semibold">не зчитано</span></div>
                     <button id="btn-undo-shk1" onclick="undoShk1()" class="hidden text-[11px] bg-rose-100 hover:bg-rose-200 text-rose-700 px-2 py-0.5 rounded font-medium transition">
                         Скасувати ШК1
@@ -301,6 +301,19 @@
             </summary>
 
             <div class="px-5 pb-5 pt-1 space-y-4 border-t border-slate-100">
+                <!-- Режим кроків: 2 кроки (Назва + №) або 1 крок (Лише серійний/інв. №) -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Сценарій сканування:</div>
+                    <div class="grid grid-cols-2 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="flow-btn-two" onclick="setScanFlow('two_steps')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            2 кроки (Назва + №)
+                        </button>
+                        <button id="flow-btn-serial" onclick="setScanFlow('serial_only')" class="py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔢 Лише серійний №
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Профіль ОС: Android / iOS -->
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
                     <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 uppercase">
@@ -327,27 +340,20 @@
                     </button>
                 </div>
 
-                <!-- Цикл обліку: 2 кроки або 1 крок (Лише №) -->
-                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1">
-                    <button id="steps-btn-2" onclick="setStepMode(2)" class="py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                        2 кроки (Назва + №)
-                    </button>
-                    <button id="steps-btn-1" onclick="setStepMode(1)" class="py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                        🔢 1 крок (Лише №)
-                    </button>
-                </div>
-
                 <!-- Перемикач типу зчитування: Код або Текст / Лише ШК або QR / Лише Текст (OCR) -->
-                <div class="bg-slate-100 p-1 rounded-xl grid grid-cols-3 gap-1">
-                    <button id="input-type-both" onclick="setInputType('both')" class="py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
-                        🔍 Код або Текст
-                    </button>
-                    <button id="input-type-barcode" onclick="setInputType('barcode')" class="py-2 px-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                        📊 Лише ШК або QR
-                    </button>
-                    <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-2 px-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900">
-                        🔤 Лише Текст
-                    </button>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати:</div>
+                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="input-type-both" onclick="setInputType('both')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
+                            🔍 Код або Текст
+                        </button>
+                        <button id="input-type-barcode" onclick="setInputType('barcode')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            📊 Лише ШК або QR
+                        </button>
+                        <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔤 Лише Текст
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Вибір мови розпізнавання тексту (лат.-кир.) -->
@@ -381,22 +387,26 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-22 18:45";
+        const APP_VERSION = "2026-11-22 17:00-opt";
 
-        let codeReader = null;
+        let liveCodeReader = null;
+        let photoCodeReader = null;
         let nativeDetector = null;
         let ocrWorker = null;
         let ocrWorkerLang = '';
         let isOcrBusy = false;
         let isDecodeBusy = false;
         let lastOcrTime = 0;
-        let scanLoopId = null;
+        let lastDecodeTime = 0;
+        let scanRafId = null;
         let isScanning = false;
         let currentStream = null;
+        let sharedAudioCtx = null;
+
+        let scanFlow = 'two_steps';
         let osProfile = 'android';
         let scanMode = 'manual';
-        let stepMode = 2; // 2 | 1
-        let inputType = 'both'; // 'both' | 'barcode' | 'ocr'
+        let inputType = 'both';
         let ocrLang = 'ukr+eng';
         let pinShk1 = false;
         let isEditingHighlight = false;
@@ -417,6 +427,8 @@
         let xlsDataEndRow = -1;
 
         let xlsInventory = [];
+        let xlsSerialMap = new Map();
+        let xlsSapInvMap = new Map();
         let xlsFileName = '';
         let currentListTab = 'scanned';
 
@@ -425,7 +437,7 @@
         let dragState = null;
         let focusIndicatorTimeout = null;
 
-        function createReader() {
+        function createReader(tryHarder = false) {
             const hints = new Map();
             const formats = [
                 ZXing.BarcodeFormat.CODE_128,
@@ -440,7 +452,7 @@
                 ZXing.BarcodeFormat.DATA_MATRIX
             ];
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-            hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, tryHarder);
             return new ZXing.MultiFormatReader(hints);
         }
 
@@ -461,6 +473,21 @@
                     }
                 }
             }
+        }
+
+        function rebuildXlsLookupMaps() {
+            xlsSerialMap.clear();
+            xlsSapInvMap.clear();
+            xlsInventory.forEach((item, idx) => {
+                if (item.serialNo) {
+                    const key = item.serialNo.trim().toLowerCase();
+                    if (key && !xlsSerialMap.has(key)) xlsSerialMap.set(key, { item, idx });
+                }
+                if (item.sapInvNo) {
+                    const key = item.sapInvNo.trim().toLowerCase();
+                    if (key && !xlsSapInvMap.has(key)) xlsSapInvMap.set(key, { item, idx });
+                }
+            });
         }
 
         async function getOcrWorker() {
@@ -489,8 +516,12 @@
 
         window.onload = function() {
             document.getElementById('app-version').innerText = `Версія: ${APP_VERSION}`;
-            codeReader = createReader();
+            liveCodeReader = createReader(false);
+            photoCodeReader = createReader(true);
             initNativeDetector();
+
+            const savedFlow = localStorage.getItem('scan_flow_mode');
+            setScanFlow(savedFlow === 'serial_only' ? 'serial_only' : 'two_steps');
 
             const savedOs = localStorage.getItem('scan_os_profile');
             if (savedOs === 'android' || savedOs === 'ios') {
@@ -502,9 +533,6 @@
 
             const savedMode = localStorage.getItem('scan_mode');
             setScanMode(savedMode === 'auto' ? 'auto' : 'manual');
-
-            const savedSteps = Number(localStorage.getItem('step_mode'));
-            setStepMode(savedSteps === 1 ? 1 : 2);
 
             const savedInputType = localStorage.getItem('scan_input_type');
             if (savedInputType === 'barcode' || savedInputType === 'ocr' || savedInputType === 'both') {
@@ -543,6 +571,7 @@
                     xlsSapInvCol = parsedState.sapInvCol ?? 6;
                     xlsGroupCol = parsedState.groupCol ?? 17;
                     xlsDataEndRow = parsedState.dataEndRow ?? -1;
+                    rebuildXlsLookupMaps();
                 } catch (e) {}
             }
 
@@ -559,37 +588,35 @@
             window.addEventListener('pointercancel', onCropDragEnd);
         };
 
-        function setStepMode(steps) {
-            stepMode = steps === 1 ? 1 : 2;
-            localStorage.setItem('step_mode', String(stepMode));
+        function setScanFlow(flow) {
+            scanFlow = flow;
+            localStorage.setItem('scan_flow_mode', flow);
 
-            const b2 = document.getElementById('steps-btn-2');
-            const b1 = document.getElementById('steps-btn-1');
-            const row1 = document.getElementById('row-shk1');
+            const twoBtn = document.getElementById('flow-btn-two');
+            const serialBtn = document.getElementById('flow-btn-serial');
+            const pinWrapper = document.getElementById('pin-shk1-wrapper');
+            const shk1Row = document.getElementById('shk1-buffer-row');
 
-            if (stepMode === 1) {
-                b1.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-emerald-700 shadow-sm";
-                b2.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
-                row1.classList.add('hidden');
+            const inactiveClass = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+            const activeClass = "py-1.5 px-2.5 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
+
+            if (flow === 'serial_only') {
+                twoBtn.className = inactiveClass;
+                serialBtn.className = activeClass;
+                pinWrapper.classList.add('hidden');
+                shk1Row.classList.add('hidden');
                 currentStep = 2;
-                document.getElementById('step-indicator').innerText = "1 крок: Заводський / Інв. №";
-                document.getElementById('badge-shk1').innerText = "Очікування №";
+                tempShk1 = '';
+                document.getElementById('btn-undo-shk1').classList.add('hidden');
+                document.getElementById('step-indicator').innerText = "Режим: Лише серійний / інв. №";
+                document.getElementById('badge-shk1').innerText = "Без назви (ШК1)";
                 document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
             } else {
-                b2.className = "py-2 px-3 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm";
-                b1.className = "py-2 px-3 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
-                row1.classList.remove('hidden');
-                currentStep = tempShk1 ? 2 : 1;
-                if (currentStep === 1) {
-                    document.getElementById('step-indicator').innerText = "Крок 1 з 2: Назва / Модель";
-                    document.getElementById('badge-shk1').innerText = "Очікування ШК1";
-                    document.getElementById('badge-shk1').className = "text-xs bg-indigo-100 text-indigo-800 px-2.5 py-1 rounded-full font-medium";
-                } else {
-                    document.getElementById('step-indicator').innerText = pinShk1
-                        ? "Крок 2 з 2: Заводський / Інв. № (ШК1 закріплено)"
-                        : "Крок 2 з 2: Заводський / Інв. №";
-                    document.getElementById('badge-shk1').innerText = pinShk1 ? "📌 ШК1 закріплено" : "Очікування ШК2";
-                }
+                twoBtn.className = activeClass;
+                serialBtn.className = inactiveClass;
+                pinWrapper.classList.remove('hidden');
+                shk1Row.classList.remove('hidden');
+                undoShk1();
             }
         }
 
@@ -619,6 +646,7 @@
 
                     xlsInventory = parsed;
                     xlsFileName = file.name;
+                    rebuildXlsLookupMaps();
 
                     localStorage.setItem('xls_inventory_sap_v2', JSON.stringify({
                         items: xlsInventory,
@@ -736,6 +764,8 @@
 
         function clearInventoryBase() {
             xlsInventory = [];
+            xlsSerialMap.clear();
+            xlsSapInvMap.clear();
             xlsFileName = '';
             xlsRawRows = [];
             xlsHeaderRowIndex = -1;
@@ -747,18 +777,16 @@
         }
 
         function matchXlsRecord(value) {
-            if (!xlsInventory || xlsInventory.length === 0) return null;
+            if (xlsInventory.length === 0) return null;
             const target = String(value || '').trim().toLowerCase();
             if (!target) return null;
 
-            for (const item of xlsInventory) {
-                if (item.serialNo && item.serialNo.toLowerCase() === target) {
-                    return { item, matchedBy: 'Заводський номер' };
-                }
-                if (item.sapInvNo && item.sapInvNo.toLowerCase() === target) {
-                    return { item, matchedBy: 'Інв. № в SAP' };
-                }
-            }
+            const bySerial = xlsSerialMap.get(target);
+            if (bySerial) return { item: bySerial.item, idx: bySerial.idx, matchedBy: 'Заводський номер' };
+
+            const bySap = xlsSapInvMap.get(target);
+            if (bySap) return { item: bySap.item, idx: bySap.idx, matchedBy: 'Інв. № в SAP' };
+
             return null;
         }
 
@@ -769,8 +797,7 @@
             boxes.forEach(b => {
                 const found = matchXlsRecord(b.shk2) || matchXlsRecord(b.shk1);
                 if (found) {
-                    const idx = xlsInventory.indexOf(found.item);
-                    if (idx !== -1) matchedItemIndexes.add(idx);
+                    matchedItemIndexes.add(found.idx);
                 } else {
                     extraBoxes.push(b);
                 }
@@ -1212,23 +1239,23 @@
 
             try {
                 if (inputType === 'both' || inputType === 'barcode') {
-                    let decoded = await decodeBarcodeSmart(canvas);
+                    let decoded = await decodeBarcodeSmart(canvas, true);
                     if (!decoded && !boostContrast) {
                         const altCanvas = document.createElement('canvas');
                         altCanvas.width = canvas.width;
                         altCanvas.height = canvas.height;
                         altCanvas.getContext('2d').drawImage(canvas, 0, 0);
                         applyHighContrastToCanvas(altCanvas);
-                        decoded = await decodeBarcodeSmart(altCanvas);
+                        decoded = await decodeBarcodeSmart(altCanvas, true);
                     }
                     if (decoded && decoded.trim()) {
                         closePhotoCropModal();
-                        handleDetectedCode(decoded, 'Штрихкод з фото (HD)');
+                        handleDetectedCode(decoded, 'ШК або QR з фото (HD)');
                         return;
                     }
                 }
 
-                if ((inputType === 'both' && currentStep === 1 && stepMode === 2) || inputType === 'ocr') {
+                if (inputType !== 'barcode' && scanFlow === 'two_steps' && currentStep === 1) {
                     const text = await recognizeTextFromCanvas(canvas);
                     if (text && text.trim()) {
                         closePhotoCropModal();
@@ -1237,7 +1264,12 @@
                     }
                 }
 
-                setPhotoStatus('У вибраній рамці нічого не розпізнано. Переконайтесь, що штрихкод або текст помістився повністю, або увімкніть «Підсилити контраст».', true);
+                setPhotoStatus(
+                    inputType === 'barcode'
+                        ? 'Штрихкод або QR у вибраній рамці не розпізнано. Переконайтесь, що код помістився повністю, або увімкніть «Підсилити контраст».'
+                        : 'У вибраній рамці нічого не розпізнано. Переконайтесь, що код або текст помістився повністю, або увімкніть «Підсилити контраст».',
+                    true
+                );
             } finally {
                 btn.disabled = false;
                 btn.innerText = origLabel;
@@ -1290,7 +1322,8 @@
         function togglePinShk1(checked) {
             pinShk1 = !!checked;
             localStorage.setItem('pin_shk1', String(pinShk1));
-            if (stepMode === 1) return;
+            if (scanFlow === 'serial_only') return;
+
             if (!pinShk1 && currentStep === 2 && tempShk1) {
                 document.getElementById('badge-shk1').innerText = "Очікування ШК2";
             } else if (pinShk1 && tempShk1) {
@@ -1331,19 +1364,19 @@
             const barcodeBtn = document.getElementById('input-type-barcode');
             const ocrBtn = document.getElementById('input-type-ocr');
 
-            const inactiveClass = "py-2 px-2 rounded-lg text-xs font-semibold transition text-slate-600 hover:text-slate-900";
+            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
 
             bothBtn.className = type === 'both'
-                ? "py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-indigo-700 shadow-sm"
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm"
                 : inactiveClass;
             barcodeBtn.className = type === 'barcode'
-                ? "py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-emerald-700 shadow-sm"
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm"
                 : inactiveClass;
             ocrBtn.className = type === 'ocr'
-                ? "py-2 px-2 rounded-lg text-xs font-semibold transition bg-white text-amber-700 shadow-sm"
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-amber-700 shadow-sm"
                 : inactiveClass;
 
-            if (type === 'both' || type === 'ocr') {
+            if (type === 'ocr') {
                 getOcrWorker().catch(() => {});
             }
         }
@@ -1362,16 +1395,21 @@
 
         function playBeep() {
             try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
+                if (!sharedAudioCtx) {
+                    sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (sharedAudioCtx.state === 'suspended') {
+                    sharedAudioCtx.resume();
+                }
+                const oscillator = sharedAudioCtx.createOscillator();
+                const gainNode = sharedAudioCtx.createGain();
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
-                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                oscillator.frequency.setValueAtTime(880, sharedAudioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.1, sharedAudioCtx.currentTime);
                 oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
+                gainNode.connect(sharedAudioCtx.destination);
                 oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 0.12);
+                oscillator.stop(sharedAudioCtx.currentTime + 0.12);
             } catch (e) {}
         }
 
@@ -1453,7 +1491,8 @@
                 }
 
                 isScanning = true;
-                scanLoop();
+                lastDecodeTime = 0;
+                scanRafId = requestAnimationFrame(scanLoop);
             } catch (err) {
                 document.getElementById('camera-placeholder').style.display = 'flex';
                 aimBox.classList.add('hidden');
@@ -1506,18 +1545,19 @@
             return true;
         }
 
-        function decodeBarcodeWithZXing(canvas) {
+        function decodeBarcodeWithZXing(canvas, isHighAccuracy = false) {
             try {
+                const reader = isHighAccuracy ? photoCodeReader : liveCodeReader;
                 const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
                 const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-                const result = codeReader.decode(binaryBitmap);
+                const result = reader.decode(binaryBitmap);
                 return result ? result.getText() : null;
             } catch (e) {
                 return null;
             }
         }
 
-        async function decodeBarcodeSmart(canvas) {
+        async function decodeBarcodeSmart(canvas, isHighAccuracy = false) {
             if (osProfile === 'android' && nativeDetector) {
                 try {
                     const barcodes = await nativeDetector.detect(canvas);
@@ -1526,10 +1566,10 @@
                     }
                     return null;
                 } catch (e) {
-                    return decodeBarcodeWithZXing(canvas);
+                    return decodeBarcodeWithZXing(canvas, isHighAccuracy);
                 }
             }
-            return decodeBarcodeWithZXing(canvas);
+            return decodeBarcodeWithZXing(canvas, isHighAccuracy);
         }
 
         function cleanOcrText(raw) {
@@ -1582,52 +1622,58 @@
             }
         }
 
-        async function scanLoop() {
+        function triggerOcrRecognition(canvas, expectedInputType) {
+            if (isOcrBusy || (Date.now() - lastOcrTime <= 1800)) return;
+            isOcrBusy = true;
+            lastOcrTime = Date.now();
+            recognizeTextFromCanvas(canvas)
+                .then(text => {
+                    if (text && isScanning && scanFlow === 'two_steps' && currentStep === 1 && inputType === expectedInputType) {
+                        handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                    }
+                })
+                .catch(() => {})
+                .finally(() => {
+                    isOcrBusy = false;
+                });
+        }
+
+        async function scanLoop(now) {
             if (!isScanning) return;
 
-            const video = document.getElementById('video');
-            const aimBox = document.getElementById('aim-box');
+            const intervalMs = osProfile === 'android' ? 200 : 160;
+            if (!isDecodeBusy && (now - lastDecodeTime) >= intervalMs) {
+                const video = document.getElementById('video');
+                const aimBox = document.getElementById('aim-box');
 
-            if (!isDecodeBusy && video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                isDecodeBusy = true;
-                try {
-                    const canvas = document.getElementById('scan-canvas');
-                    const captured = captureAimBoxToCanvas(video, aimBox, canvas);
+                if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                    isDecodeBusy = true;
+                    lastDecodeTime = now;
+                    try {
+                        const canvas = document.getElementById('scan-canvas');
+                        const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
-                    if (captured) {
-                        let decodedBarcode = null;
-                        if (inputType === 'both' || inputType === 'barcode') {
-                            decodedBarcode = await decodeBarcodeSmart(canvas);
+                        if (captured) {
+                            const allowOcr = scanFlow === 'two_steps' && currentStep === 1;
+
+                            if (inputType === 'barcode' || inputType === 'both') {
+                                const decodedBarcode = await decodeBarcodeSmart(canvas, false);
+                                if (decodedBarcode && decodedBarcode.trim()) {
+                                    handleDetectedCode(decodedBarcode, 'ШК або QR у рамці');
+                                } else if (inputType === 'both' && allowOcr) {
+                                    triggerOcrRecognition(canvas, 'both');
+                                }
+                            } else if (inputType === 'ocr' && allowOcr) {
+                                triggerOcrRecognition(canvas, 'ocr');
+                            }
                         }
-
-                        if (decodedBarcode && decodedBarcode.trim()) {
-                            handleDetectedCode(decodedBarcode, 'Штрихкод у рамці');
-                        } else if (
-                            ((inputType === 'both' && currentStep === 1 && stepMode === 2) || inputType === 'ocr') &&
-                            !isOcrBusy &&
-                            (Date.now() - lastOcrTime > 1800)
-                        ) {
-                            isOcrBusy = true;
-                            lastOcrTime = Date.now();
-                            recognizeTextFromCanvas(canvas)
-                                .then(text => {
-                                    if (text && isScanning) {
-                                        handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
-                                    }
-                                })
-                                .catch(() => {})
-                                .finally(() => {
-                                    isOcrBusy = false;
-                                });
-                        }
+                    } finally {
+                        isDecodeBusy = false;
                     }
-                } finally {
-                    isDecodeBusy = false;
                 }
             }
 
-            const intervalMs = osProfile === 'android' ? 200 : 160;
-            scanLoopId = setTimeout(scanLoop, intervalMs);
+            scanRafId = requestAnimationFrame(scanLoop);
         }
 
         function handleHighlightEdit(val) {
@@ -1704,9 +1750,9 @@
         function stopStreamOnly() {
             isScanning = false;
             isDecodeBusy = false;
-            if (scanLoopId) {
-                clearTimeout(scanLoopId);
-                scanLoopId = null;
+            if (scanRafId) {
+                cancelAnimationFrame(scanRafId);
+                scanRafId = null;
             }
             if (currentStream) {
                 currentStream.getTracks().forEach(t => t.stop());
@@ -1733,26 +1779,13 @@
             input.value = '';
         }
 
-        function isDuplicateSerial(serial) {
-            const target = (serial || '').trim().toLowerCase();
-            if (!target) return false;
-            return boxes.some(b => (b.shk2 || '').trim().toLowerCase() === target);
-        }
-
         function processScannedValue(value) {
             const autoFillEl = document.getElementById('autofill-shk1-from-xls');
             const canAutoFill = autoFillEl && autoFillEl.checked && xlsInventory.length > 0;
 
-            if (stepMode === 1) {
-                let shk1Val = '—';
-                if (canAutoFill) {
-                    const found = matchXlsRecord(value);
-                    if (found && found.item && found.item.name) {
-                        shk1Val = found.item.name;
-                    }
-                }
-                tempShk1 = shk1Val;
-                document.getElementById('val-shk1').innerText = shk1Val;
+            if (scanFlow === 'serial_only') {
+                const found = canAutoFill ? matchXlsRecord(value) : null;
+                tempShk1 = found && found.item && found.item.name ? found.item.name : '—';
                 finalizeBox(value);
                 return;
             }
@@ -1785,6 +1818,7 @@
         }
 
         function undoShk1() {
+            if (scanFlow === 'serial_only') return;
             currentStep = 1;
             tempShk1 = '';
             document.getElementById('val-shk1').innerText = 'не зчитано';
@@ -1802,12 +1836,12 @@
 
             document.getElementById('val-shk2').innerText = 'очікується...';
 
-            if (stepMode === 1) {
+            if (scanFlow === 'serial_only') {
                 currentStep = 2;
                 tempShk1 = '';
-                document.getElementById('val-shk1').innerText = '—';
-                document.getElementById('step-indicator').innerText = "1 крок: Заводський / Інв. №";
-                document.getElementById('badge-shk1').innerText = "Очікування №";
+                document.getElementById('btn-undo-shk1').classList.add('hidden');
+                document.getElementById('step-indicator').innerText = "Режим: Лише серійний / інв. №";
+                document.getElementById('badge-shk1').innerText = "Без назви (ШК1)";
                 document.getElementById('badge-shk1').className = "text-xs bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full font-medium";
                 return;
             }
@@ -1831,13 +1865,11 @@
         }
 
         function finalizeBox(tempShk2) {
-            const isDup = isDuplicateSerial(tempShk2);
             document.getElementById('val-shk2').innerText = tempShk2;
 
             boxes.unshift({
                 shk1: tempShk1 || '—',
                 shk2: tempShk2,
-                duplicate: isDup,
                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             });
 
@@ -1845,7 +1877,7 @@
         }
 
         function getXlsBadgeHtml(box) {
-            if (!xlsInventory || xlsInventory.length === 0) return '';
+            if (xlsInventory.length === 0) return '';
             const found = matchXlsRecord(box.shk2) || matchXlsRecord(box.shk1);
             if (!found) {
                 return `<span class="inline-block text-[11px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-medium">🟣 Надлишок (немає в описі)</span>`;
@@ -1882,13 +1914,20 @@
                 return;
             }
 
+            const serialCounts = new Map();
+            boxes.forEach(b => {
+                const key = (b.shk2 || '').trim().toLowerCase();
+                if (key) serialCounts.set(key, (serialCounts.get(key) || 0) + 1);
+            });
+
             container.innerHTML = boxes.map((box, index) => {
-                const isDup = box.duplicate || boxes.slice(index + 1).some(prev => (prev.shk2 || '').trim().toLowerCase() === (box.shk2 || '').trim().toLowerCase());
+                const key = (box.shk2 || '').trim().toLowerCase();
+                const isDup = key && (serialCounts.get(key) || 0) > 1;
                 const cardClass = isDup
-                    ? "bg-rose-50/80 border border-rose-300 p-3 rounded-lg flex justify-between items-center text-sm"
+                    ? "bg-rose-50/90 border-2 border-rose-300 p-3 rounded-lg flex justify-between items-center text-sm"
                     : "bg-slate-50 border border-slate-200 p-3 rounded-lg flex justify-between items-center text-sm";
                 const dupBadge = isDup
-                    ? `<span class="inline-block text-[11px] bg-rose-100 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-semibold">🔁 Дублікат</span>`
+                    ? `<span class="inline-block text-[11px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-semibold">🔁 Дублікат (${serialCounts.get(key)})</span>`
                     : '';
 
                 return `
@@ -1899,8 +1938,8 @@
                                 ${dupBadge}
                                 ${getXlsBadgeHtml(box)}
                             </div>
-                            <div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>
-                            <div><b>Заводський / Інв. № (ШК2):</b> <span class="text-emerald-700 font-mono">${box.shk2}</span></div>
+                            ${box.shk1 && box.shk1 !== '—' ? `<div><b>Модель/Назва (ШК1):</b> <span class="text-indigo-600">${box.shk1}</span></div>` : ''}
+                            <div><b>Заводський / Інв. № (ШК2):</b> <span class="${isDup ? 'text-rose-700 font-bold' : 'text-emerald-700 font-semibold'} font-mono">${box.shk2}</span></div>
                         </div>
                         <button onclick="deleteBox(${index})" class="text-slate-400 hover:text-rose-600 p-1 transition" title="Видалити">
                             ✕
