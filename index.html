@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Сканер коробок + Інвентаризація SAP (v2026-11-24 22:53)</title>
+    <title>Сканер коробок + Інвентаризація SAP (v2026-11-24 23:42)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +19,7 @@
         <p class="text-sm text-indigo-200 mt-1">ШК1 → Назва/Модель · ШК2 → Серійний / Інв. № · Звірка з SAP XLS</p>
         <div class="mt-2 flex items-center justify-center gap-2 text-xs">
             <span id="app-version" class="bg-indigo-800/80 text-indigo-100 px-2.5 py-0.5 rounded-full font-mono">
-                Версія: 2026-11-24 22:53
+                Версія: 2026-11-24 23:42
             </span>
             <button onclick="forceReload()" class="bg-indigo-500 hover:bg-indigo-400 text-white px-2.5 py-0.5 rounded-full transition font-medium">
                 ↻ Оновити
@@ -340,9 +340,9 @@
                     </button>
                 </div>
 
-                <!-- Перемикач типу зчитування: Код або Текст / Лише ШК або QR / Лише Текст (OCR) -->
+                <!-- Перемикач типу зчитування для 1-го кроку: Код або Текст / Лише ШК або QR / Лише Текст (OCR) -->
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати:</div>
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати на 1-му кроці (Назва / Модель):</div>
                     <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
                         <button id="input-type-both" onclick="setInputType('both')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm">
                             🔍 Код або Текст
@@ -351,6 +351,22 @@
                             📊 Лише ШК або QR
                         </button>
                         <button id="input-type-ocr" onclick="setInputType('ocr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔤 Лише Текст
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Перемикач типу зчитування для 2-го кроку (ШК2 / Заводський / Інв. №) -->
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div class="text-[11px] font-semibold text-slate-500 uppercase">Що сканувати на 2-му кроці (Заводський / Інв. №):</div>
+                    <div class="grid grid-cols-3 gap-1 bg-slate-200/70 p-1 rounded-lg">
+                        <button id="step2-type-barcode" onclick="setStep2InputType('barcode')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm">
+                            📊 Лише ШК/QR
+                        </button>
+                        <button id="step2-type-both" onclick="setStep2InputType('both')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
+                            🔍 ШК або Текст
+                        </button>
+                        <button id="step2-type-ocr" onclick="setStep2InputType('ocr')" class="py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700">
                             🔤 Лише Текст
                         </button>
                     </div>
@@ -387,7 +403,7 @@
     <canvas id="rotated-photo-canvas" class="hidden"></canvas>
 
     <script>
-        const APP_VERSION = "2026-11-24 22:53";
+        const APP_VERSION = "2026-11-24 23:42";
 
         let codeReader = null;
         let nativeDetector = null;
@@ -402,7 +418,8 @@
         let scanFlow = 'two_steps';
         let osProfile = 'android';
         let scanMode = 'manual';
-        let inputType = 'both';
+        let inputType = 'both'; // 1-й крок: 'both' | 'barcode' | 'ocr'
+        let step2InputType = 'barcode'; // 2-й крок: 'barcode' | 'both' | 'ocr'
         let ocrLang = 'ukr+eng';
         let pinShk1 = false;
         let isEditingHighlight = false;
@@ -430,6 +447,13 @@
         let photoRotationDeg = 0;
         let dragState = null;
         let focusIndicatorTimeout = null;
+
+        function getActiveInputType() {
+            if (scanFlow === 'serial_only' || currentStep === 2) {
+                return step2InputType;
+            }
+            return inputType;
+        }
 
         function createReader() {
             const hints = new Map();
@@ -517,6 +541,13 @@
                 setInputType(savedInputType);
             } else {
                 setInputType('both');
+            }
+
+            const savedStep2Type = localStorage.getItem('scan_step2_input_type');
+            if (savedStep2Type === 'barcode' || savedStep2Type === 'ocr' || savedStep2Type === 'both') {
+                setStep2InputType(savedStep2Type);
+            } else {
+                setStep2InputType('barcode');
             }
 
             const savedLang = localStorage.getItem('scan_ocr_lang');
@@ -1239,8 +1270,10 @@
             btn.disabled = true;
             btn.innerText = '⏳ Сканування...';
 
+            const activeType = getActiveInputType();
+
             try {
-                if (inputType === 'both' || inputType === 'barcode') {
+                if (activeType === 'both' || activeType === 'barcode') {
                     let decoded = await decodeBarcodeSmart(canvas);
                     if (!decoded && !boostContrast) {
                         const altCanvas = document.createElement('canvas');
@@ -1257,7 +1290,7 @@
                     }
                 }
 
-                if (inputType !== 'barcode' && scanFlow === 'two_steps' && currentStep === 1) {
+                if (activeType !== 'barcode') {
                     const text = await recognizeTextFromCanvas(canvas);
                     if (text && text.trim()) {
                         closePhotoCropModal();
@@ -1267,7 +1300,7 @@
                 }
 
                 setPhotoStatus(
-                    inputType === 'barcode'
+                    activeType === 'barcode'
                         ? 'Штрихкод або QR у вибраній рамці не розпізнано. Переконайтесь, що код помістився повністю, або увімкніть «Підсилити контраст».'
                         : 'У вибраній рамці нічого не розпізнано. Переконайтесь, що код або текст помістився повністю, або увімкніть «Підсилити контраст».',
                     true
@@ -1374,6 +1407,31 @@
                 : inactiveClass;
 
             if (type === 'ocr') {
+                getOcrWorker().catch(() => {});
+            }
+        }
+
+        function setStep2InputType(type) {
+            step2InputType = type;
+            localStorage.setItem('scan_step2_input_type', type);
+
+            const barcodeBtn = document.getElementById('step2-type-barcode');
+            const bothBtn = document.getElementById('step2-type-both');
+            const ocrBtn = document.getElementById('step2-type-ocr');
+
+            const inactiveClass = "py-1.5 px-2 rounded-md text-xs font-semibold transition text-slate-700 hover:bg-white/60";
+
+            barcodeBtn.className = type === 'barcode'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-emerald-700 shadow-sm"
+                : inactiveClass;
+            bothBtn.className = type === 'both'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-indigo-700 shadow-sm"
+                : inactiveClass;
+            ocrBtn.className = type === 'ocr'
+                ? "py-1.5 px-2 rounded-md text-xs font-semibold transition bg-white text-amber-700 shadow-sm"
+                : inactiveClass;
+
+            if (type === 'ocr' || type === 'both') {
                 getOcrWorker().catch(() => {});
             }
         }
@@ -1525,7 +1583,6 @@
             const sw = Math.max(1, Math.floor(relWidth * vw));
             const sh = Math.max(1, Math.floor(relHeight * vh));
 
-            // Вища роздільність вирізаної рамки допомагає зчитувати дрібні серійні/інвентарні коди на 2-му кроці
             const maxDim = osProfile === 'android' ? 960 : 1280;
             const scale = Math.min(1, maxDim / Math.max(sw, sh));
             canvas.width = Math.max(1, Math.floor(sw * scale));
@@ -1554,7 +1611,6 @@
                     if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
                         return barcodes[0].rawValue;
                     }
-                    // Резервна спроба через ZXing для складних або дрібних кодів
                     return decodeBarcodeWithZXing(canvas);
                 } catch (e) {
                     return decodeBarcodeWithZXing(canvas);
@@ -1626,19 +1682,20 @@
                     const captured = captureAimBoxToCanvas(video, aimBox, canvas);
 
                     if (captured) {
-                        const allowOcr = scanFlow === 'two_steps' && currentStep === 1;
+                        const activeType = getActiveInputType();
+                        const stepTag = (scanFlow === 'serial_only' || currentStep === 2) ? ' (ШК2)' : ' (ШК1)';
 
-                        if (inputType === 'barcode' || inputType === 'both') {
+                        if (activeType === 'barcode' || activeType === 'both') {
                             const decodedBarcode = await decodeBarcodeSmart(canvas);
                             if (decodedBarcode && decodedBarcode.trim()) {
-                                handleDetectedCode(decodedBarcode, 'ШК або QR у рамці');
-                            } else if (inputType === 'both' && allowOcr && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                                handleDetectedCode(decodedBarcode, `ШК або QR${stepTag}`);
+                            } else if (activeType === 'both' && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
                                 isOcrBusy = true;
                                 lastOcrTime = Date.now();
                                 recognizeTextFromCanvas(canvas)
                                     .then(text => {
-                                        if (text && isScanning && scanFlow === 'two_steps' && currentStep === 1 && inputType === 'both') {
-                                            handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                                        if (text && isScanning && getActiveInputType() === 'both') {
+                                            handleDetectedCode(text, `Текст ${ocrLang.toUpperCase()}${stepTag}`);
                                         }
                                     })
                                     .catch(() => {})
@@ -1646,13 +1703,13 @@
                                         isOcrBusy = false;
                                     });
                             }
-                        } else if (inputType === 'ocr' && allowOcr && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
+                        } else if (activeType === 'ocr' && !isOcrBusy && (Date.now() - lastOcrTime > 1800)) {
                             isOcrBusy = true;
                             lastOcrTime = Date.now();
                             recognizeTextFromCanvas(canvas)
                                 .then(text => {
-                                    if (text && isScanning && scanFlow === 'two_steps' && currentStep === 1 && inputType === 'ocr') {
-                                        handleDetectedCode(text, `Текст у рамці (${ocrLang.toUpperCase()})`);
+                                    if (text && isScanning && getActiveInputType() === 'ocr') {
+                                        handleDetectedCode(text, `Текст ${ocrLang.toUpperCase()}${stepTag}`);
                                     }
                                 })
                                 .catch(() => {})
